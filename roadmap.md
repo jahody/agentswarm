@@ -5,9 +5,11 @@ Each item is independently shippable.
 
 Ordered by ROI. Top items unlock more usage; bottom items polish.
 
+**Status as of 2026-05-04:** Items 1, 3, and 4 shipped in `bank.py`.
+
 ---
 
-## 1. Latency-aware T3 routing
+## ✅ 1. Latency-aware T3 routing (shipped 2026-05-04)
 
 **Goal**: T3 selects fastest model first, not yaml-priority first. T3
 SLA is "snap fast" — Groq llama-3.1-8b-instant 250 ms beats HF
@@ -64,7 +66,7 @@ without manual prompting. Free providers churn weekly.
 
 ---
 
-## 3. Multi-process safety
+## ✅ 3. Multi-process safety (shipped 2026-05-04)
 
 **Goal**: allow multiple agentSwarm clients (e.g. concurrent jobs)
 without state corruption.
@@ -75,8 +77,7 @@ can clobber another's `tpm_remaining` decrement).
 
 **Approach**:
 - Wrap state mutations in transactions: `BEGIN IMMEDIATE; ... COMMIT;`.
-- Convert `set_state` to `UPDATE` with `WHERE updated_at <= ?` to skip
-  stale writes.
+- Convert `set_state` to upsert with `WHERE excluded.updated_at >= live.updated_at` to skip stale writes.
 - Add `process_id` column to `events` for audit.
 
 **Files**: `bank.py` `StateStore` methods only.
@@ -88,11 +89,11 @@ against Groq. Assert `events` table count = 200. Assert
 `live.rpm_remaining` matches Groq's reported headers within ±2.
 
 **Risk**: deadlocks under high contention. Mitigation: SQLite's
-`busy_timeout=10000` already set in `_conn`; bump to 30000 if needed.
+`busy_timeout` set to 30 s in `_conn`.
 
 ---
 
-## 4. Tool calling / function calling
+## ✅ 4. Tool calling / function calling (shipped 2026-05-04)
 
 **Goal**: pass-through OpenAI-compat `tools` field. Bank already speaks
 OAI; just need to forward + parse `tool_calls` in response.
@@ -164,17 +165,13 @@ known to lack tool support (e.g. llama-3.1-8b on cerebras) and assert
 
 ---
 
-## Suggested ordering
+## Suggested ordering (remaining)
 
-1. **Latency-aware T3** (small, immediate UX win).
-2. **Tool calling** (unlocks agent use cases).
-3. **Multi-process safety** (only if 2nd consumer appears).
-4. **Weekly cron** (low effort, high signal-to-noise).
-5. **Cost accounting** (only if paid fallback added).
-6. **Package layout** (last — best done after API stabilizes).
+1. **Weekly cron** (low effort, high signal-to-noise).
+2. **Cost accounting** (only if paid fallback added).
+3. **Package layout** (last — best done after API stabilizes).
 
-Skip 5 entirely if no plan to add paid providers. Skip 3 entirely if
-agentSwarm stays single-host single-process.
+Skip cost accounting entirely if no plan to add paid providers.
 
 ---
 

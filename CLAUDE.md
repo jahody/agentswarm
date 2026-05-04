@@ -36,8 +36,8 @@ Copy `scripts/.env.example` to `scripts/.env` and populate API keys. The `Bank` 
 Single-file library (~950 lines). Three main classes:
 
 - **`Bank`** — public API. `Bank.from_yaml(providers_yaml, state=sqlite_path)` initializes everything. Primary methods: `.chat()`, `.stream()`, `.discover_live_models()`.
-- **`StateStore`** — SQLite WAL persistence (tables: `providers`, `models`, `live`, `events`, `disabled_models`). Tracks per-(provider, model) quotas, cooldowns, and permanent disables.
-- **`BankResponse`** — return type: `text`, `provider`, `model`, `latency_ms`, `meta` dict (token counts, rpm/rpd remaining).
+- **`StateStore`** — SQLite WAL persistence (tables: `providers`, `models`, `live`, `events`, `disabled_models`). Tracks per-(provider, model) quotas, cooldowns, permanent disables, latency p50, and tool support. All writes use `BEGIN IMMEDIATE` transactions; `set_state` uses an upsert with a stale-write guard (`WHERE excluded.updated_at >= live.updated_at`).
+- **`BankResponse`** — return type: `text`, `tool_calls`, `provider`, `model`, `latency_ms`, `meta` dict (token counts, rpm/rpd remaining).
 
 ### Provider Registry: `scripts/providers.yaml`
 
@@ -45,9 +45,9 @@ Single-file library (~950 lines). Three main classes:
 
 ### Selection & Failover Policy
 
-1. `Bank.acquire()` filters candidates by requested tier, scores by quota remaining, and respects `prefer`/`avoid` lists.
-2. `Bank._call()` executes the HTTP request (OAI-compat `/chat/completions`), parses rate-limit headers, updates `StateStore`.
-3. On 429 → cooldown + retry next candidate (up to `max_failovers=6`). On 5xx → exponential backoff. On 401/403 → disable provider permanently. On 404/410 → disable model permanently.
+1. `Bank.acquire()` filters candidates by requested tier, scores by quota remaining, and respects `prefer`/`avoid` lists. For T3, scoring uses `-latency_p50_ms` (fastest model wins) instead of YAML priority order. Skips models marked `supports_tools=false` when `tools` are requested.
+2. `Bank._call()` executes the HTTP request (OAI-compat `/chat/completions`), parses rate-limit headers, updates `StateStore`. Forwards `tools`/`tool_choice` when provided; extracts `tool_calls` from the response.
+3. On 429 → cooldown + retry next candidate (up to `max_failovers=6`). On 5xx → exponential backoff. On 401/403 → disable provider permanently. On 404/410 → disable model permanently. On 400 with tools and "tool" in the error → mark model `supports_tools=false` and failover.
 
 ### Quota Tracking
 
@@ -61,13 +61,13 @@ Single-file library (~950 lines). Three main classes:
 |------|----------|---------------|
 | T1 (reasoning) | quality-first | HuggingFace → NVIDIA NIM → SambaNova → OpenRouter |
 | T2 (general) | quota-first | Groq → HuggingFace → SambaNova → Google AI Studio → NVIDIA NIM → OpenRouter |
-| T3 (fast) | latency-first | Groq → Cerebras → Google AI Studio → SambaNova → HuggingFace → OpenRouter |
+| T3 (fast) | measured latency p50 | dynamically reordered — Groq/Cerebras typically win |
 
 ### Key Design Docs
 
 - `bank-design.md` — selection policy, data model, quota strategies, failover rules, cooldown defaults
 - `findings.md` — Phase 1–3 research verdicts, per-provider notes, tier composition rationale
-- `roadmap.md` — 6 planned follow-on phases (latency-aware T3, weekly quota cron, multi-process safety, tool calling, cost accounting, package layout)
+- `roadmap.md` — Items 1–3 shipped (latency-aware T3, tool calling, multi-process safety). Remaining: weekly cron, cost accounting, package layout
 
 ## Public API
 
@@ -84,8 +84,10 @@ resp = bank.chat(
     prefer=["groq"],
     avoid=["nvidia_nim"],
     max_failovers=6,
+    tools=[...],                        # optional OpenAI-compat tool definitions
+    tool_choice="auto",                 # optional
 )
-# resp.text, resp.provider, resp.model, resp.latency_ms, resp.meta
+# resp.text, resp.tool_calls, resp.provider, resp.model, resp.latency_ms, resp.meta
 
 # Streaming
 for chunk in bank.stream(messages=[...], tier="T2", max_tokens=512):

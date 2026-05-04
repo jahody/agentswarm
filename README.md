@@ -3,9 +3,11 @@
 Pool of free-tier LLM providers selected at call time by capability tier
 + remaining quota. Local-first, single-host, OpenAI-compatible.
 
-Status: Phase 1 (probe), Phase 2 (bank skeleton), Phase 3 (capability
-sniff) all complete. 7 providers wired in. See `findings.md` for the
-data behind the choices and `roadmap.md` for what's not built yet.
+Status: Phase 1–3 complete (probe, bank skeleton, capability sniff).
+Roadmap items 1–3 shipped: latency-aware T3 routing, tool calling
+pass-through, multi-process safe SQLite. 7 providers wired in. See
+`findings.md` for the data behind the choices and `roadmap.md` for
+what's not built yet.
 
 ## Quick start
 
@@ -62,9 +64,12 @@ resp = bank.chat(
     prefer_models=["llama-3.3-70b"],   # specific model preference
     avoid=["nvidia_nim"],
     avoid_models=["..."],
+    tools=[...],                       # optional: OpenAI-compat tool definitions
+    tool_choice="auto",                # optional: "auto" | "none" | {type, function}
 )
 print(resp.text, resp.provider, resp.model, resp.latency_ms)
-print(resp.meta)  # prompt_tokens, completion_tokens, rpm_remaining, etc.
+print(resp.tool_calls)   # list of tool_call objects, or None
+print(resp.meta)         # prompt_tokens, completion_tokens, rpm_remaining, etc.
 
 # Streaming (OpenAI-compat SSE)
 for chunk in bank.stream(messages=[...], tier="T2", max_tokens=512):
@@ -78,9 +83,12 @@ for chunk in bank.stream(messages=[...], tier="T2", max_tokens=512):
 report = bank.discover_live_models()
 ```
 
-Selection policy lives in `TIER_PRIORITY` at the top of `bank.py` plus
-the `_score()` method. State persists in `bank-state.sqlite` (WAL).
-Failover on 429/5xx/timeout, permanent disable on 404/410.
+Selection policy lives in `TIER_PRIORITY` and `_score()` in `bank.py`.
+T3 uses measured latency p50 (EWMA) instead of YAML order — fastest
+model wins. State persists in `bank-state.sqlite` (WAL, multi-process
+safe via `BEGIN IMMEDIATE`). Failover on 429/5xx/timeout, permanent
+disable on 404/410. Models that reject tool calls are marked
+`supports_tools=false` and skipped on future tool requests.
 
 ## Tier rosters (post Phase-3 capsniff)
 

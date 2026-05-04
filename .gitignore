@@ -1,0 +1,8 @@
+scripts/.env
+findings/
+bank-state.sqlite
+bank-state.sqlite-shm
+bank-state.sqlite-wal
+__pycache__/
+*.pyc
+.venv/

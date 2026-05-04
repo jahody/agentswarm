@@ -1,0 +1,155 @@
+# Cleaned 2026-05-03 after Phase-1 probe. See findings.md for verdicts.
+# Removed: deepseek (402, no signup credit), moonshot (suspended at $0).
+# Each model entry: {id, tier} where tier in {T1, T2, T3}.
+# T1 = high reasoning, T2 = general, T3 = fast/cheap.
+# `disabled_models`: permanently dropped IDs (404/410/gated). Kept for audit.
+
+- name: cerebras
+  base_url: https://api.cerebras.ai/v1
+  key_env: CEREBRAS_KEY
+  quota_endpoint: null
+  quota_strategy: headers
+  request_timeout: 30
+  data_used_for_training: false
+  notes: rich x-ratelimit-{limit,remaining}-{requests,tokens}-{minute,hour,day}
+  models:
+    - {id: llama3.1-8b,                        tier: T3}
+    # Demoted T1 -> T2 after 2026-05-03 capsniff (failed reasoning verdict).
+    - {id: qwen-3-235b-a22b-instruct-2507,     tier: T2}
+  disabled_models:
+    - {id: gpt-oss-120b,    reason: "404 access gated despite catalog presence"}
+    - {id: zai-glm-4.7,     reason: "404 access gated"}
+    - {id: llama-3.3-70b,   reason: "stale id (renamed)"}
+    - {id: qwen-3-32b,      reason: "stale id"}
+    - {id: deepseek-r1-distill-llama-70b, reason: "stale id"}
+
+- name: groq
+  base_url: https://api.groq.com/openai/v1
+  key_env: GROQ_KEY
+  quota_endpoint: null
+  quota_strategy: headers
+  request_timeout: 30
+  data_used_for_training: false
+  notes: per-model RPM/TPM in headers; window inferred from reset interval
+  models:
+    - {id: llama-3.3-70b-versatile,                       tier: T2}
+    - {id: llama-3.1-8b-instant,                          tier: T3}
+    - {id: qwen/qwen3-32b,                                tier: T2}
+    - {id: meta-llama/llama-4-scout-17b-16e-instruct,     tier: T2}
+    - {id: openai/gpt-oss-120b,                           tier: T1}
+    - {id: openai/gpt-oss-20b,                            tier: T2}
+  disabled_models:
+    - {id: qwen-qwq-32b,                  reason: "decommissioned"}
+    - {id: deepseek-r1-distill-llama-70b, reason: "decommissioned"}
+    - {id: moonshotai/kimi-k2-instruct,   reason: "not hosted by Groq"}
+
+- name: google_ai_studio
+  base_url: https://generativelanguage.googleapis.com/v1beta/openai
+  key_env: GOOGLE_AI_STUDIO_KEY
+  quota_endpoint: null
+  quota_strategy: opaque
+  request_timeout: 30
+  data_used_for_training: true
+  notes: opaque on free tier; local bucket from documented limits; 429 body authoritative
+  models:
+    - {id: gemini-2.5-flash,      tier: T2, doc_rpm: 10,  doc_rpd: 250}
+    - {id: gemini-2.5-flash-lite, tier: T3, doc_rpm: 30,  doc_rpd: 14000}
+  disabled_models:
+    - {id: gemini-2.5-pro, reason: "limit:0 on free tier (paid only)"}
+
+- name: sambanova
+  base_url: https://api.sambanova.ai/v1
+  key_env: SAMBANOVA_KEY
+  quota_endpoint: null
+  quota_strategy: headers
+  request_timeout: 30
+  data_used_for_training: false
+  notes: 20 RPD per model only; no RPM/TPM headers; soft-throttle locally
+  models:
+    - {id: Meta-Llama-3.3-70B-Instruct,        tier: T2}
+    - {id: DeepSeek-V3.2,                      tier: T1}
+    - {id: DeepSeek-V3.1,                      tier: T1}
+    - {id: Llama-4-Maverick-17B-128E-Instruct, tier: T2}
+    - {id: gpt-oss-120b,                       tier: T1}
+    - {id: gemma-3-12b-it,                     tier: T3}
+  disabled_models:
+    - {id: DeepSeek-R1, reason: "410 deprecated; use V3.2"}
+
+- name: nvidia_nim
+  base_url: https://integrate.api.nvidia.com/v1
+  key_env: NVIDIA_NIM_KEY
+  quota_endpoint: null
+  quota_strategy: opaque
+  request_timeout: 120
+  data_used_for_training: false
+  notes: cold-start can exceed 60s; opaque quota; monthly credit budget visible only in dashboard
+  models:
+    - {id: moonshotai/kimi-k2-instruct,                       tier: T1}
+    - {id: moonshotai/kimi-k2-thinking,                       tier: T1}
+    - {id: meta/llama-3.3-70b-instruct,                       tier: T2}
+    - {id: deepseek-ai/deepseek-v3.2,                         tier: T1}
+    - {id: openai/gpt-oss-120b,                               tier: T1}
+    - {id: qwen/qwen3-next-80b-a3b-instruct,                  tier: T2}
+    - {id: nvidia/llama-3.3-nemotron-super-49b-v1.5,          tier: T1}
+    - {id: z-ai/glm5,                                         tier: T1}
+  disabled_models:
+    - {id: deepseek-ai/deepseek-r1, reason: "410 EOL 2026-01-26"}
+
+- name: openrouter
+  base_url: https://openrouter.ai/api/v1
+  key_env: OPENROUTER_KEY
+  quota_endpoint: /auth/key
+  quota_strategy: shared_bucket   # account-wide 20 RPM / 50 RPD across all :free
+  shared_bucket: true
+  request_timeout: 60
+  data_used_for_training: true
+  notes: |
+    `:free` slugs require enabling free-models privacy at
+    https://openrouter.ai/settings/privacy. Several free routes also
+    rate-limit upstream returning 429.
+  models:
+    # PASS+PASS in 2026-05-03 capsniff
+    - {id: openai/gpt-oss-120b:free,                              tier: T1}
+    - {id: nvidia/nemotron-3-super-120b-a12b:free,                tier: T1}
+    - {id: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free,    tier: T1}
+    - {id: z-ai/glm-4.5-air:free,                                 tier: T1}
+    - {id: openai/gpt-oss-20b:free,                               tier: T2}
+    - {id: minimax/minimax-m2.5:free,                             tier: T2}
+  disabled_models:
+    # Stale (not in live /v1/models)
+    - {id: deepseek/deepseek-r1:free,                  reason: "stale, not in live :free catalog"}
+    - {id: deepseek/deepseek-r1-0528:free,             reason: "stale"}
+    - {id: google/gemini-2.5-pro-exp:free,             reason: "stale"}
+    - {id: qwen/qwen-2.5-72b-instruct:free,            reason: "stale"}
+    - {id: mistralai/mistral-small-3.1-24b-instruct:free, reason: "stale"}
+    # Persistent upstream rate-limit (capsniff 2026-05-03; retry weekly)
+    - {id: nousresearch/hermes-3-llama-3.1-405b:free,  reason: "persistent upstream 429"}
+    - {id: qwen/qwen3-next-80b-a3b-instruct:free,      reason: "persistent upstream 429"}
+    - {id: qwen/qwen3-coder:free,                      reason: "persistent upstream 429"}
+    - {id: meta-llama/llama-3.3-70b-instruct:free,     reason: "Venice 402 spend cap"}
+    - {id: meta-llama/llama-3.2-3b-instruct:free,      reason: "persistent upstream 429"}
+    - {id: google/gemma-3-12b-it:free,                 reason: "persistent upstream 429"}
+
+- name: huggingface
+  base_url: https://router.huggingface.co/v1
+  key_env: HF_TOKEN
+  quota_endpoint: null
+  quota_strategy: headers
+  request_timeout: 60
+  data_used_for_training: false
+  notes: |
+    Routes to backend providers (Cerebras/Together/Fireworks/Hyperbolic).
+    Headers reflect router state. Risk of double-counting if a backend
+    is also registered directly.
+  models:
+    - {id: meta-llama/Llama-3.3-70B-Instruct,          tier: T2}
+    - {id: deepseek-ai/DeepSeek-R1,                    tier: T1}
+    - {id: deepseek-ai/DeepSeek-V3.2,                  tier: T1}
+    - {id: Qwen/Qwen3-235B-A22B-Instruct-2507,         tier: T1}
+    - {id: Qwen/Qwen3-Next-80B-A3B-Instruct,           tier: T2}
+    - {id: Qwen/Qwen3-Coder-480B-A35B-Instruct,        tier: T2}
+    - {id: google/gemma-3-27b-it,                      tier: T3}
+
+# Removed providers (paid-only as of 2026-05-03):
+# - deepseek: 402 Insufficient Balance; signup credits no longer granted.
+# - moonshot: account suspended for zero balance; $5 voucher discontinued.

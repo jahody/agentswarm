@@ -1,0 +1,25 @@
+# NVIDIA NIM (build.nvidia.com)
+
+- **Status**: working (7/8 200 with 120 s + retry; 1 still flaky)
+- **Signup**: https://build.nvidia.com/ — NVIDIA developer account, free.
+- **Auth**: `Authorization: Bearer <NVIDIA_API_KEY>`.
+- **Base URL**: `https://integrate.api.nvidia.com/v1/` (OAI-compatible).
+- **Models tested (2026-05-03, second pass with 120 s timeout + 1 retry)**:
+  - `moonshotai/kimi-k2-instruct` → 200, 46 s (cold).
+  - `moonshotai/kimi-k2-thinking` → 200, 78 s (cold).
+  - `meta/llama-3.3-70b-instruct` → 200, 103 s (succeeded on retry).
+  - `openai/gpt-oss-120b` → 200, 441 ms (warm).
+  - `qwen/qwen3-next-80b-a3b-instruct` → 200, 3.2 s.
+  - `nvidia/llama-3.3-nemotron-super-49b-v1.5` → 200, 600 ms (warm).
+  - `z-ai/glm5` → 200, 70 s (succeeded on retry).
+  - `deepseek-ai/deepseek-v3.2` → ReadTimeout × 2 at 120 s. Mark flaky; consider disabling.
+- **EOL'd (drop)**: `deepseek-ai/deepseek-r1` → 410 Gone (2026-01-26).
+- **Rate limits**: opaque programmatically. Free dev tier has monthly request budget visible only in dashboard.
+- **Quota visibility**: **none** — no `x-ratelimit-*` headers. Track locally; 429/403 authoritative.
+- **Failure modes**:
+  - 410 for retired models.
+  - ReadTimeout @60 s — likely on-demand container spin. Need ≥120 s timeout + 1× retry on probe.
+  - 429 expected with `retry-after` when RPM hit (not yet observed).
+- **Privacy**: dev tier prompts may be used for QA. `data_used_for_training: false` is unconfirmed; treat as "may train" conservatively.
+- **Notes**: highest model variety of any provider. Best as breadth fallback for T1 reasoning when HuggingFace + Groq exhausted. Some models (kimi-thinking, llama-3.3-70b) may always be slow.
+- **Bank decision**: opaque tracking; per-(provider,model) cooldown 30 s on 429/timeout; client timeout 120 s; max 2 retries.

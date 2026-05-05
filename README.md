@@ -212,7 +212,6 @@ python3 bank.py --tier any --prefer-models deepseek-ai/DeepSeek-R1 --prompt "...
 - **SambaNova exhausted fast** — 20 RPD per model on free tier; the bank deprioritizes it correctly. Check `SELECT * FROM live WHERE provider='sambanova'`.
 - **Stale catalog** — run `python3 bank.py --discover` then check `disabled_models` table for fresh entries.
 
-## License / sharing
+## License
 
-This codebase is shared as-is for review and internal use. No license
-declared — ask the original author before redistributing.
+MIT — see [LICENSE](LICENSE).

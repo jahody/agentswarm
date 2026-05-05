@@ -90,6 +90,57 @@ safe via `BEGIN IMMEDIATE`). Failover on 429/5xx/timeout, permanent
 disable on 404/410. Models that reject tool calls are marked
 `supports_tools=false` and skipped on future tool requests.
 
+## MCP server (Claude Code integration)
+
+`mcp_server.py` wraps the bank as an MCP stdio server so Claude Code
+can delegate cheap subtasks (file summaries, docstring drafts,
+mechanical text transforms) to free-tier models instead of burning
+Claude API quota. Three tools: `llm_call`, `bank_status`,
+`discover_models`. See `CLAUDE.md` for when to delegate vs. handle a
+task directly.
+
+### Global setup (loads in every Claude Code project)
+
+Add to the top-level `mcpServers` object in `~/.claude.json`:
+
+```json
+"mcpServers": {
+  "agentswarm-bank": {
+    "type": "stdio",
+    "command": "python",
+    "args": ["/absolute/path/to/agentswarm/mcp_server.py"]
+  }
+}
+```
+
+Replace the path with the absolute path to this repo on your machine.
+API keys are read from `scripts/.env` relative to the repo — no extra
+config needed.
+
+### Project-local setup (this repo only)
+
+Create `.mcp.json` in the repo root:
+
+```json
+{
+  "mcpServers": {
+    "agentswarm-bank": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["mcp_server.py"]
+    }
+  }
+}
+```
+
+```bash
+# Standalone smoke test (sits on stdin; Ctrl-C to exit)
+python mcp_server.py
+
+# Or poke the tools via the official inspector
+npx @modelcontextprotocol/inspector python mcp_server.py
+```
+
 ## Tier rosters (post Phase-3 capsniff)
 
 - **T1 reasoning** (15 verified): groq/gpt-oss-120b, sambanova {V3.2, V3.1, gpt-oss-120b}, nim {kimi-k2-instruct, gpt-oss-120b, nemotron-super-49b, glm5}, openrouter {gpt-oss-120b, nemotron-3-super, nemotron-nano-omni-reasoning, glm-4.5-air}, hf {DeepSeek-R1, DeepSeek-V3.2, Qwen3-235B}.

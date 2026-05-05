@@ -6,3 +6,4 @@ bank-state.sqlite-wal
 __pycache__/
 *.pyc
 .venv/
+.claude/

@@ -93,6 +93,7 @@ def bank_status() -> dict:
                 "tier": m.tier,
                 "disabled": BANK.state.is_model_disabled(name, m.model_id),
                 "supports_tools": BANK.state.get_supports_tools(name, m.model_id),
+                "supports_json": BANK.state.get_supports_json(name, m.model_id),
                 "cooldown_remaining_s": max(0.0, s.cooldown_until - now),
                 "latency_p50_ms": s.latency_p50_ms,
                 "rpm_remaining": s.rpm_remaining,

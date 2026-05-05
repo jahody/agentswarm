@@ -202,6 +202,7 @@ class StateStore:
                     "ALTER TABLE live ADD COLUMN latency_p50_ms REAL",
                     "ALTER TABLE models ADD COLUMN supports_tools INTEGER DEFAULT 1",
                     "ALTER TABLE events ADD COLUMN process_id INTEGER",
+                    "ALTER TABLE models ADD COLUMN supports_json INTEGER DEFAULT 1",
                 ]:
                     try:
                         c.execute(stmt)
@@ -330,6 +331,21 @@ class StateStore:
             ).fetchone()
             return bool(row["supports_tools"]) if row else True
 
+    def mark_no_json(self, provider: str, model_id: str):
+        with self._transaction() as c:
+            c.execute(
+                "UPDATE models SET supports_json=0 WHERE provider=? AND model_id=?",
+                (provider, model_id),
+            )
+
+    def get_supports_json(self, provider: str, model_id: str) -> bool:
+        with self._read() as c:
+            row = c.execute(
+                "SELECT supports_json FROM models WHERE provider=? AND model_id=?",
+                (provider, model_id),
+            ).fetchone()
+            return bool(row["supports_json"]) if row else True
+
 
 # ---------- header parsers ----------
 
@@ -382,6 +398,50 @@ PARSERS: dict[str, Callable[[dict], dict]] = {
     "google_ai_studio": lambda h: {},
     "nvidia_nim": lambda h: {},
 }
+
+
+# ---------- tool-call normalization ----------
+
+def _normalize_tool_calls(msg: dict) -> list | None:
+    """Convert provider variations of tool-call output to canonical OpenAI list.
+
+    Returns None if no tool calls. Output shape:
+      [{"id": str, "type": "function",
+        "function": {"name": str, "arguments": str}}, ...]
+    `arguments` is always the model-emitted JSON string; caller `json.loads`.
+    """
+    tcs = msg.get("tool_calls")
+    if isinstance(tcs, list) and tcs:
+        out: list = []
+        for i, tc in enumerate(tcs):
+            if not isinstance(tc, dict):
+                continue
+            fn = tc.get("function") or {}
+            name = fn.get("name") or tc.get("name")
+            if not name:
+                continue
+            args = fn.get("arguments")
+            if args is None:
+                args = tc.get("arguments")
+            if not isinstance(args, str):
+                args = json.dumps(args) if args is not None else "{}"
+            out.append({
+                "id": tc.get("id") or f"call_{i}",
+                "type": "function",
+                "function": {"name": name, "arguments": args},
+            })
+        return out or None
+    fc = msg.get("function_call")
+    if isinstance(fc, dict) and fc.get("name"):
+        args = fc.get("arguments")
+        if not isinstance(args, str):
+            args = json.dumps(args) if args is not None else "{}"
+        return [{
+            "id": "call_0",
+            "type": "function",
+            "function": {"name": fc["name"], "arguments": args},
+        }]
+    return None
 
 
 # ---------- bank ----------
@@ -490,6 +550,7 @@ class Bank:
         avoid_models: set[str] | None = None,
         min_tokens: int | None = None,
         requires_tools: bool = False,
+        requires_json: bool = False,
     ) -> Lease | None:
         now = time.time()
         avoid = avoid or set()
@@ -508,6 +569,8 @@ class Bank:
                 if self.state.is_model_disabled(p.name, m.model_id):
                     continue
                 if requires_tools and not self.state.get_supports_tools(p.name, m.model_id):
+                    continue
+                if requires_json and not self.state.get_supports_json(p.name, m.model_id):
                     continue
                 key = self._state_key(p, m)
                 s = self.state.get_state(p.name, key)
@@ -542,6 +605,7 @@ class Bank:
         max_failovers: int = 6,
         tools: list | None = None,
         tool_choice: str | dict | None = None,
+        response_format: dict | None = None,
     ) -> BankResponse:
         if tier is None and not prefer_models:
             raise BankError("chat() requires either tier or prefer_models")
@@ -559,13 +623,18 @@ class Bank:
                 avoid_models=avoid_models_set,
                 min_tokens=max_tokens,
                 requires_tools=(tools is not None),
+                requires_json=(response_format is not None),
             )
             if lease is None:
                 raise BankExhausted(
                     f"no eligible (provider, model) for tier={tier}; tried={tried}"
                 )
             try:
-                resp = self._call(lease, messages, max_tokens, tools=tools, tool_choice=tool_choice)
+                resp = self._call(
+                    lease, messages, max_tokens,
+                    tools=tools, tool_choice=tool_choice,
+                    response_format=response_format,
+                )
                 resp.meta["tier"] = tier
                 resp.meta["attempts"] = attempts
                 return resp
@@ -597,6 +666,7 @@ class Bank:
         max_tokens: int,
         tools: list | None = None,
         tool_choice: str | dict | None = None,
+        response_format: dict | None = None,
     ) -> BankResponse:
         p, m = lease.provider, lease.model
         key = os.getenv(p.key_env)
@@ -608,6 +678,8 @@ class Bank:
             payload["tools"] = tools
         if tool_choice is not None:
             payload["tool_choice"] = tool_choice
+        if response_format is not None:
+            payload["response_format"] = response_format
         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
         t0 = time.perf_counter()
         try:
@@ -639,7 +711,7 @@ class Bank:
                     msg = body["choices"][0]["message"]
                     # gpt-oss-style models put visible answer in reasoning_content
                     text = msg.get("content") or msg.get("reasoning_content") or msg.get("reasoning")
-                    tool_calls = msg.get("tool_calls")
+                    tool_calls = _normalize_tool_calls(msg)
                 except Exception:
                     pass
                 u = body.get("usage") or {}
@@ -677,9 +749,13 @@ class Bank:
             # the user tops up.
             raise _Retryable429(retry_after=86400)
         if r.status_code == 400:
-            if tools and "tool" in err_summary.lower():
+            err_lower = err_summary.lower()
+            if tools and "tool" in err_lower:
                 self.state.mark_no_tools(p.name, m.model_id)
                 raise _RetryableTransient(f"400: tools not supported by {m.model_id}")
+            if response_format and ("response_format" in err_lower or "json_object" in err_lower or "json_schema" in err_lower or "json mode" in err_lower):
+                self.state.mark_no_json(p.name, m.model_id)
+                raise _RetryableTransient(f"400: json mode not supported by {m.model_id}")
             raise _PermanentDisable(f"400: {err_summary}")
         if r.status_code in (404, 410):
             raise _PermanentDisable(f"{r.status_code}: {err_summary}")
@@ -730,6 +806,7 @@ class Bank:
         max_failovers: int = 4,
         tools: list | None = None,
         tool_choice: str | dict | None = None,
+        response_format: dict | None = None,
     ):
         """Yield text deltas as they arrive (OpenAI-compat SSE).
 
@@ -752,13 +829,18 @@ class Bank:
                 avoid_models=avoid_models_set,
                 min_tokens=max_tokens,
                 requires_tools=(tools is not None),
+                requires_json=(response_format is not None),
             )
             if lease is None:
                 raise BankExhausted(
                     f"no eligible (provider, model) for stream tier={tier}; tried={tried}"
                 )
             try:
-                gen = self._stream_call(lease, messages, max_tokens, tools=tools, tool_choice=tool_choice)
+                gen = self._stream_call(
+                    lease, messages, max_tokens,
+                    tools=tools, tool_choice=tool_choice,
+                    response_format=response_format,
+                )
                 # First send to driver — if connection-time error fires, failover.
                 try:
                     first = next(gen)
@@ -800,6 +882,7 @@ class Bank:
         max_tokens: int,
         tools: list | None = None,
         tool_choice: str | dict | None = None,
+        response_format: dict | None = None,
     ):
         p, m = lease.provider, lease.model
         key = os.getenv(p.key_env)
@@ -816,6 +899,8 @@ class Bank:
             payload["tools"] = tools
         if tool_choice is not None:
             payload["tool_choice"] = tool_choice
+        if response_format is not None:
+            payload["response_format"] = response_format
         headers = {
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
@@ -844,9 +929,13 @@ class Bank:
                 if r.status_code == 402:
                     raise _Retryable429(retry_after=86400)
                 if r.status_code == 400:
-                    if tools and "tool" in body[:200].lower():
+                    body_lower = body[:400].lower()
+                    if tools and "tool" in body_lower:
                         self.state.mark_no_tools(p.name, m.model_id)
                         raise _RetryableTransient(f"400: tools not supported by {m.model_id}")
+                    if response_format and ("response_format" in body_lower or "json_object" in body_lower or "json_schema" in body_lower or "json mode" in body_lower):
+                        self.state.mark_no_json(p.name, m.model_id)
+                        raise _RetryableTransient(f"400: json mode not supported by {m.model_id}")
                     raise _PermanentDisable(f"400: {body[:200]}")
                 if r.status_code in (404, 410):
                     raise _PermanentDisable(f"{r.status_code}: {body[:200]}")
@@ -860,6 +949,7 @@ class Bank:
             # Stream OK — use ttfb_ms as latency sample for p50 EWMA
             self._reconcile_state(p, m, lease.state_key, dict(r.headers), ok=True, latency_ms=ttfb_ms)
             usage: dict = {}
+            tool_buf: dict[int, dict] = {}
             try:
                 for line in r.iter_lines():
                     if not line:
@@ -878,6 +968,21 @@ class Bank:
                             piece = d.get("content") or d.get("reasoning_content")
                             if piece:
                                 yield piece
+                            for tc in d.get("tool_calls") or []:
+                                if not isinstance(tc, dict):
+                                    continue
+                                idx = tc.get("index", 0)
+                                slot = tool_buf.setdefault(
+                                    idx,
+                                    {"id": None, "function": {"name": None, "arguments": ""}},
+                                )
+                                if tc.get("id"):
+                                    slot["id"] = tc["id"]
+                                fn = tc.get("function") or {}
+                                if fn.get("name"):
+                                    slot["function"]["name"] = fn["name"]
+                                if fn.get("arguments"):
+                                    slot["function"]["arguments"] += fn["arguments"]
                         except (KeyError, IndexError, TypeError):
                             pass
                         if isinstance(chunk, dict) and "usage" in chunk and chunk["usage"]:
@@ -896,12 +1001,20 @@ class Bank:
                 v = getattr(cur, fld, None)
                 if v is not None:
                     meta[fld] = v
+            tool_calls = None
+            if tool_buf:
+                synthetic = {"tool_calls": [
+                    {"id": v["id"], "type": "function", "function": v["function"]}
+                    for _, v in sorted(tool_buf.items())
+                ]}
+                tool_calls = _normalize_tool_calls(synthetic)
             yield {
                 "provider": p.name,
                 "model": m.model_id,
                 "latency_ms": latency,
                 "ttfb_ms": ttfb_ms,
                 "meta": meta,
+                "tool_calls": tool_calls,
             }
 
     # ---- catalog discovery ----

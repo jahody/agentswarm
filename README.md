@@ -4,10 +4,12 @@ Pool of free-tier LLM providers selected at call time by capability tier
 + remaining quota. Local-first, single-host, OpenAI-compatible.
 
 Status: Phase 1–3 complete (probe, bank skeleton, capability sniff).
-Roadmap items 1–3 shipped: latency-aware T3 routing, tool calling
-pass-through, multi-process safe SQLite. 7 providers wired in. See
-`findings.md` for the data behind the choices and `roadmap.md` for
-what's not built yet.
+Roadmap items 1, 3, 4 shipped: latency-aware T3 routing, multi-process
+safe SQLite, tool calling pass-through. Phase 2 candidates 7–11 also
+shipped: pytest suite + CI, normalized tool_calls, JSON mode, MCP
+server, streaming tool calls. 7 providers wired in. See `findings.md`
+for the data behind the choices and `roadmap.md` for what's not built
+yet.
 
 ## Quick start
 
@@ -66,17 +68,19 @@ resp = bank.chat(
     avoid_models=["..."],
     tools=[...],                       # optional: OpenAI-compat tool definitions
     tool_choice="auto",                # optional: "auto" | "none" | {type, function}
+    response_format={"type": "json_object"},  # optional: forwarded to provider; failover on 400
 )
 print(resp.text, resp.provider, resp.model, resp.latency_ms)
-print(resp.tool_calls)   # list of tool_call objects, or None
+print(resp.tool_calls)   # canonical list [{id, type, function: {name, arguments}}], or None
 print(resp.meta)         # prompt_tokens, completion_tokens, rpm_remaining, etc.
 
-# Streaming (OpenAI-compat SSE)
-for chunk in bank.stream(messages=[...], tier="T2", max_tokens=512):
+# Streaming (OpenAI-compat SSE) — also supports tools= and response_format=
+for chunk in bank.stream(messages=[...], tier="T2", max_tokens=512, tools=[...]):
     if isinstance(chunk, str):
         print(chunk, end="", flush=True)
     else:
-        # final dict: {provider, model, latency_ms, ttfb_ms, meta}
+        # final dict: {provider, model, latency_ms, ttfb_ms, meta, tool_calls}
+        # tool_calls is the assembled list (None when no tools used)
         pass
 
 # Refresh provider catalogs from /v1/models, auto-disable stale IDs

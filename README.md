@@ -61,7 +61,7 @@ python bank.py --status
 
 `mcp_server.py` wraps the bank so Claude Code can delegate cheap subtasks (summaries, transforms, docstring drafts) to free-tier models. Three tools: `llm_call`, `bank_status`, `discover_models`.
 
-Add to `.mcp.json` in the repo root:
+Add to `~/.claude.json` to make it available across all Claude Code projects (use the absolute path to `mcp_server.py`):
 
 ```json
 {
@@ -69,13 +69,13 @@ Add to `.mcp.json` in the repo root:
     "agentswarm-bank": {
       "type": "stdio",
       "command": "python",
-      "args": ["mcp_server.py"]
+      "args": ["/absolute/path/to/agentswarm/mcp_server.py"]
     }
   }
 }
 ```
 
-For global setup (all Claude Code projects), add the same block to `~/.claude.json` with an absolute path to `mcp_server.py`.
+For per-project setup only, add the same block to `.mcp.json` in the repo root with `"args": ["mcp_server.py"]`.
 
 `llm_call` accepts `file_path` to read a local file server-side — avoids inlining large files into the prompt. See `CLAUDE.md` for delegation guidelines.
 

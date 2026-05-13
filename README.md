@@ -9,8 +9,8 @@ pip install -r requirements.txt
 cp scripts/.env.example scripts/.env
 $EDITOR scripts/.env                        # fill in API keys
 
-python3 scripts/probe.py                    # connectivity check
-python3 bank.py --tier T2 --prompt "hello" --max-tokens 256
+python scripts/probe.py                    # connectivity check
+python bank.py --tier T2 --prompt "hello" --max-tokens 256
 ```
 
 ## Provider signup (no credit card required)
@@ -35,24 +35,24 @@ For OpenRouter `:free` slugs: enable https://openrouter.ai/settings/privacy → 
 
 ```bash
 # Connectivity probe
-python3 scripts/probe.py
-python3 scripts/probe.py groq cerebras --retries 1
+python scripts/probe.py
+python scripts/probe.py groq cerebras --retries 1
 
 # Capability sniff
-python3 scripts/capsniff.py --tier T1     # T1 / T2 / T3
-python3 scripts/capsniff.py groq
+python scripts/capsniff.py --tier T1     # T1 / T2 / T3
+python scripts/capsniff.py groq
 
 # One-shot inference
-python3 bank.py --tier T2 --prompt "..." --max-tokens 256
-python3 bank.py --tier T1 --prefer huggingface --max-tokens 1024
-python3 bank.py --tier T3 --stream --prompt "count to 5" --max-tokens 32
-python3 bank.py --tier any --prefer-models deepseek-ai/DeepSeek-R1 --prompt "..."
+python bank.py --tier T2 --prompt "..." --max-tokens 256
+python bank.py --tier T1 --prefer huggingface --max-tokens 1024
+python bank.py --tier T3 --stream --prompt "count to 5" --max-tokens 32
+python bank.py --tier any --prefer-models deepseek-ai/DeepSeek-R1 --prompt "..."
 
 # Catalog sync (hits /v1/models, auto-disables stale IDs)
-python3 bank.py --discover
+python bank.py --discover
 
 # Health snapshot: status, quota, latency p50, strengths
-python3 bank.py --status
+python bank.py --status
 ```
 
 **Tiers**: T1 = reasoning/quality-first · T2 = general/quota-first · T3 = fast/latency-p50 (Groq/Cerebras win).

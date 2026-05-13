@@ -12,7 +12,9 @@
   - `qwen/qwen3-next-80b-a3b-instruct` → 200, 3.2 s.
   - `nvidia/llama-3.3-nemotron-super-49b-v1.5` → 200, 600 ms (warm).
   - `z-ai/glm5` → 200, 70 s (succeeded on retry).
-  - `deepseek-ai/deepseek-v3.2` → ReadTimeout × 2 at 120 s. Mark flaky; consider disabling.
+  - `deepseek-ai/deepseek-v4-pro` → T1; supersedes v3.2.
+  - `deepseek-ai/deepseek-v4-flash` → T2; faster/smaller V4 variant.
+- **Superseded**: `deepseek-ai/deepseek-v3.2` → dropped from NIM catalog 2026-05 (was timing out at 120 s).
 - **EOL'd (drop)**: `deepseek-ai/deepseek-r1` → 410 Gone (2026-01-26).
 - **Rate limits**: opaque programmatically. Free dev tier has monthly request budget visible only in dashboard.
 - **Quota visibility**: **none** — no `x-ratelimit-*` headers. Track locally; 429/403 authoritative.

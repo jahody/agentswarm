@@ -126,7 +126,9 @@ reasoning, 1024 for code, 3 retries on transient errors.
 | sambanova    | gpt-oss-120b                                       | PASS   | PASS | 644/683 ms |
 | nvidia_nim   | moonshotai/kimi-k2-instruct                        | PASS   | PASS | 5546/4570 ms |
 | nvidia_nim   | moonshotai/kimi-k2-thinking                        | ERR    | PASS | reasoning hit timeout × 3 |
-| nvidia_nim   | deepseek-ai/deepseek-v3.2                          | ERR    | PASS | flaky (still timing out) |
+| nvidia_nim   | deepseek-ai/deepseek-v3.2                          | ERR    | N/A  | superseded by v4; dropped from NIM catalog 2026-05 |
+| nvidia_nim   | deepseek-ai/deepseek-v4-pro                        | -      | -    | added 2026-05; not yet probed |
+| nvidia_nim   | deepseek-ai/deepseek-v4-flash                      | -      | -    | added 2026-05; not yet probed |
 | nvidia_nim   | openai/gpt-oss-120b                                | PASS   | PASS | 1055/1164 ms |
 | nvidia_nim   | nvidia/llama-3.3-nemotron-super-49b-v1.5           | PASS   | PASS | 49.6/35.7 s — slow but correct |
 | nvidia_nim   | z-ai/glm5                                          | PASS   | PASS | 117/99 s — heavy cold-start |

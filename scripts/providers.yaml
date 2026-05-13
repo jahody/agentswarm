@@ -3,6 +3,7 @@
 # Each model entry: {id, tier} where tier in {T1, T2, T3}.
 # T1 = high reasoning, T2 = general, T3 = fast/cheap.
 # `disabled_models`: permanently dropped IDs (404/410/gated). Kept for audit.
+# `strengths`: capability labels — reasoning, coding, agentic, fast, multilingual, general.
 
 - name: cerebras
   base_url: https://api.cerebras.ai/v1
@@ -13,9 +14,9 @@
   data_used_for_training: false
   notes: rich x-ratelimit-{limit,remaining}-{requests,tokens}-{minute,hour,day}
   models:
-    - {id: llama3.1-8b,                        tier: T3}
+    - {id: llama3.1-8b,                        tier: T3, doc_rpm: 30, doc_rpd: 14400, doc_tpm: 60000, doc_tpd: 1000000, strengths: [fast]}
     # Demoted T1 -> T2 after 2026-05-03 capsniff (failed reasoning verdict).
-    - {id: qwen-3-235b-a22b-instruct-2507,     tier: T2}
+    - {id: qwen-3-235b-a22b-instruct-2507,     tier: T2, doc_rpm: 30, doc_rpd: 14400, doc_tpm: 60000, doc_tpd: 1000000, strengths: [general, multilingual]}
   disabled_models:
     - {id: gpt-oss-120b,    reason: "404 access gated despite catalog presence"}
     - {id: zai-glm-4.7,     reason: "404 access gated"}
@@ -32,12 +33,12 @@
   data_used_for_training: false
   notes: per-model RPM/TPM in headers; window inferred from reset interval
   models:
-    - {id: llama-3.3-70b-versatile,                       tier: T2}
-    - {id: llama-3.1-8b-instant,                          tier: T3}
-    - {id: qwen/qwen3-32b,                                tier: T2}
-    - {id: meta-llama/llama-4-scout-17b-16e-instruct,     tier: T2}
-    - {id: openai/gpt-oss-120b,                           tier: T1}
-    - {id: openai/gpt-oss-20b,                            tier: T2}
+    - {id: llama-3.3-70b-versatile,                       tier: T2, doc_rpm: 30, doc_rpd: 14400, doc_tpm: 131072, strengths: [general, multilingual]}
+    - {id: llama-3.1-8b-instant,                          tier: T3, doc_rpm: 30, doc_rpd: 14400, doc_tpm: 131072, strengths: [fast]}
+    - {id: qwen/qwen3-32b,                                tier: T2, doc_rpm: 30, doc_rpd: 14400, doc_tpm: 40000,  strengths: [general, multilingual]}
+    - {id: meta-llama/llama-4-scout-17b-16e-instruct,     tier: T2, doc_rpm: 30, doc_rpd: 14400, doc_tpm: 131072, strengths: [fast, multilingual]}
+    - {id: openai/gpt-oss-120b,                           tier: T1, strengths: [general, reasoning]}
+    - {id: openai/gpt-oss-20b,                            tier: T2, strengths: [general]}
   disabled_models:
     - {id: qwen-qwq-32b,                  reason: "decommissioned"}
     - {id: deepseek-r1-distill-llama-70b, reason: "decommissioned"}
@@ -52,8 +53,8 @@
   data_used_for_training: true
   notes: opaque on free tier; local bucket from documented limits; 429 body authoritative
   models:
-    - {id: gemini-2.5-flash,      tier: T2, doc_rpm: 10,  doc_rpd: 250}
-    - {id: gemini-2.5-flash-lite, tier: T3, doc_rpm: 30,  doc_rpd: 14000}
+    - {id: gemini-2.5-flash,      tier: T2, doc_rpm: 10,  doc_rpd: 250,   doc_tpm: 1000000, strengths: [general, multilingual]}
+    - {id: gemini-2.5-flash-lite, tier: T3, doc_rpm: 30,  doc_rpd: 14000, doc_tpm: 1000000, strengths: [fast, multilingual]}
   disabled_models:
     - {id: gemini-2.5-pro, reason: "limit:0 on free tier (paid only)"}
 
@@ -66,12 +67,12 @@
   data_used_for_training: false
   notes: 20 RPD per model only; no RPM/TPM headers; soft-throttle locally
   models:
-    - {id: Meta-Llama-3.3-70B-Instruct,        tier: T2}
-    - {id: DeepSeek-V3.2,                      tier: T1}
-    - {id: DeepSeek-V3.1,                      tier: T1}
-    - {id: Llama-4-Maverick-17B-128E-Instruct, tier: T2}
-    - {id: gpt-oss-120b,                       tier: T1}
-    - {id: gemma-3-12b-it,                     tier: T3}
+    - {id: Meta-Llama-3.3-70B-Instruct,        tier: T2, doc_rpd: 20, strengths: [general, multilingual]}
+    - {id: DeepSeek-V3.2,                      tier: T1, doc_rpd: 20, strengths: [coding, general]}
+    - {id: DeepSeek-V3.1,                      tier: T1, doc_rpd: 20, strengths: [coding, general]}
+    - {id: Llama-4-Maverick-17B-128E-Instruct, tier: T2, doc_rpd: 20, strengths: [general, multilingual]}
+    - {id: gpt-oss-120b,                       tier: T1, doc_rpd: 20, strengths: [general, reasoning]}
+    - {id: gemma-3-12b-it,                     tier: T3, doc_rpd: 20, strengths: [fast, multilingual]}
   disabled_models:
     - {id: DeepSeek-R1, reason: "410 deprecated; use V3.2"}
 
@@ -84,16 +85,18 @@
   data_used_for_training: false
   notes: cold-start can exceed 60s; opaque quota; monthly credit budget visible only in dashboard
   models:
-    - {id: moonshotai/kimi-k2-instruct,                       tier: T1}
-    - {id: moonshotai/kimi-k2-thinking,                       tier: T1}
-    - {id: meta/llama-3.3-70b-instruct,                       tier: T2}
-    - {id: deepseek-ai/deepseek-v3.2,                         tier: T1}
-    - {id: openai/gpt-oss-120b,                               tier: T1}
-    - {id: qwen/qwen3-next-80b-a3b-instruct,                  tier: T2}
-    - {id: nvidia/llama-3.3-nemotron-super-49b-v1.5,          tier: T1}
-    - {id: z-ai/glm5,                                         tier: T1}
+    - {id: moonshotai/kimi-k2-instruct,                       tier: T1, strengths: [agentic, coding]}
+    - {id: moonshotai/kimi-k2-thinking,                       tier: T1, strengths: [reasoning]}
+    - {id: meta/llama-3.3-70b-instruct,                       tier: T2, strengths: [general, multilingual]}
+    - {id: deepseek-ai/deepseek-v4-pro,                       tier: T1, strengths: [coding, general]}
+    - {id: deepseek-ai/deepseek-v4-flash,                     tier: T2, strengths: [coding, fast]}
+    - {id: openai/gpt-oss-120b,                               tier: T1, strengths: [general, reasoning]}
+    - {id: qwen/qwen3-next-80b-a3b-instruct,                  tier: T2, strengths: [general, multilingual]}
+    - {id: nvidia/llama-3.3-nemotron-super-49b-v1.5,          tier: T1, strengths: [reasoning, general]}
+    - {id: z-ai/glm5,                                         tier: T1, strengths: [multilingual]}
   disabled_models:
-    - {id: deepseek-ai/deepseek-r1, reason: "410 EOL 2026-01-26"}
+    - {id: deepseek-ai/deepseek-r1,  reason: "410 EOL 2026-01-26"}
+    - {id: deepseek-ai/deepseek-v3.2, reason: "superseded by v4; missing from NIM catalog 2026-05"}
 
 - name: openrouter
   base_url: https://openrouter.ai/api/v1
@@ -109,12 +112,13 @@
     rate-limit upstream returning 429.
   models:
     # PASS+PASS in 2026-05-03 capsniff
-    - {id: openai/gpt-oss-120b:free,                              tier: T1}
-    - {id: nvidia/nemotron-3-super-120b-a12b:free,                tier: T1}
-    - {id: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free,    tier: T1}
-    - {id: z-ai/glm-4.5-air:free,                                 tier: T1}
-    - {id: openai/gpt-oss-20b:free,                               tier: T2}
-    - {id: minimax/minimax-m2.5:free,                             tier: T2}
+    # doc limits are account-wide shared bucket (20 RPM / 50 RPD total across all :free models)
+    - {id: openai/gpt-oss-120b:free,                              tier: T1, doc_rpm: 20, doc_rpd: 50, strengths: [general, reasoning]}
+    - {id: nvidia/nemotron-3-super-120b-a12b:free,                tier: T1, doc_rpm: 20, doc_rpd: 50, strengths: [reasoning]}
+    - {id: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free,    tier: T1, doc_rpm: 20, doc_rpd: 50, strengths: [reasoning, fast]}
+    - {id: z-ai/glm-4.5-air:free,                                 tier: T1, doc_rpm: 20, doc_rpd: 50, strengths: [multilingual]}
+    - {id: openai/gpt-oss-20b:free,                               tier: T2, doc_rpm: 20, doc_rpd: 50, strengths: [general]}
+    - {id: minimax/minimax-m2.5:free,                             tier: T2, doc_rpm: 20, doc_rpd: 50, strengths: [general]}
   disabled_models:
     # Stale (not in live /v1/models)
     - {id: deepseek/deepseek-r1:free,                  reason: "stale, not in live :free catalog"}
@@ -142,13 +146,13 @@
     Headers reflect router state. Risk of double-counting if a backend
     is also registered directly.
   models:
-    - {id: meta-llama/Llama-3.3-70B-Instruct,          tier: T2}
-    - {id: deepseek-ai/DeepSeek-R1,                    tier: T1}
-    - {id: deepseek-ai/DeepSeek-V3.2,                  tier: T1}
-    - {id: Qwen/Qwen3-235B-A22B-Instruct-2507,         tier: T1}
-    - {id: Qwen/Qwen3-Next-80B-A3B-Instruct,           tier: T2}
-    - {id: Qwen/Qwen3-Coder-480B-A35B-Instruct,        tier: T2}
-    - {id: google/gemma-3-27b-it,                      tier: T3}
+    - {id: meta-llama/Llama-3.3-70B-Instruct,          tier: T2, doc_rpm: 500000, doc_tpm: 300000, strengths: [general, multilingual]}
+    - {id: deepseek-ai/DeepSeek-R1,                    tier: T1, doc_rpm: 500000, doc_tpm: 300000, strengths: [reasoning, coding]}
+    - {id: deepseek-ai/DeepSeek-V3.2,                  tier: T1, doc_rpm: 500000, doc_tpm: 300000, strengths: [coding, general]}
+    - {id: Qwen/Qwen3-235B-A22B-Instruct-2507,         tier: T1, doc_rpm: 500000, doc_tpm: 300000, strengths: [general, multilingual]}
+    - {id: Qwen/Qwen3-Next-80B-A3B-Instruct,           tier: T2, doc_rpm: 500000, doc_tpm: 300000, strengths: [general, multilingual]}
+    - {id: Qwen/Qwen3-Coder-480B-A35B-Instruct,        tier: T2, doc_rpm: 500000, doc_tpm: 300000, strengths: [coding]}
+    - {id: google/gemma-3-27b-it,                      tier: T3, doc_rpm: 500000, doc_tpm: 300000, strengths: [fast, multilingual]}
 
 # Removed providers (paid-only as of 2026-05-03):
 # - deepseek: 402 Insufficient Balance; signup credits no longer granted.

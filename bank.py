@@ -54,6 +54,46 @@ class Model:
     doc_tpm: int | None = None
     doc_tpd: int | None = None
     supports_tools: bool = True
+    benchmarks: dict | None = None  # {"mmlu": 86.4, ...} loaded from benchmarks.yaml
+    strengths: list[str] = field(default_factory=list)  # e.g. ["coding", "reasoning"]
+
+
+# Maps provider-specific model IDs to canonical HuggingFace Hub IDs for benchmark lookup.
+# None = model has no HF Hub presence (e.g. Gemini, gpt-oss).
+CANONICAL_HF_IDS: dict[str, str | None] = {
+    "llama3.1-8b":                            "meta-llama/Llama-3.1-8B-Instruct",
+    "llama-3.3-70b-versatile":                "meta-llama/Llama-3.3-70B-Instruct",
+    "llama-3.1-8b-instant":                   "meta-llama/Llama-3.1-8B-Instruct",
+    "Meta-Llama-3.3-70B-Instruct":            "meta-llama/Llama-3.3-70B-Instruct",
+    "Llama-4-Maverick-17B-128E-Instruct":     "meta-llama/Llama-4-Maverick-17B-128E-Instruct",
+    "meta-llama/llama-4-scout-17b-16e-instruct": "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+    "meta/llama-3.3-70b-instruct":            "meta-llama/Llama-3.3-70B-Instruct",
+    "DeepSeek-V3.2":                          "deepseek-ai/DeepSeek-V3-0324",
+    "DeepSeek-V3.1":                          "deepseek-ai/DeepSeek-V3",
+    "deepseek-ai/DeepSeek-V3.2":              "deepseek-ai/DeepSeek-V3-0324",
+    "qwen-3-235b-a22b-instruct-2507":         "Qwen/Qwen3-235B-A22B-Instruct-2507",
+    "qwen/qwen3-32b":                         "Qwen/Qwen3-32B",
+    "Qwen/Qwen3-Next-80B-A3B-Instruct":       "Qwen/Qwen3-30B-A3B",
+    "qwen/qwen3-next-80b-a3b-instruct":       "Qwen/Qwen3-30B-A3B",
+    "gemma-3-12b-it":                         "google/gemma-3-12b-it",
+    "moonshotai/kimi-k2-instruct":            "moonshotai/Kimi-K2-Instruct",
+    "moonshotai/kimi-k2-thinking":            "moonshotai/Kimi-K2-Thinking",
+    "nvidia/llama-3.3-nemotron-super-49b-v1.5": "nvidia/Llama-3.3-Nemotron-Super-49B-v1",
+    "z-ai/glm5":                              "THUDM/GLM-4-9B-Chat",
+    "z-ai/glm-4.5-air:free":                  None,
+    "gemini-2.5-flash":                       None,
+    "gemini-2.5-flash-lite":                  None,
+    "gpt-oss-120b":                           None,
+    "openai/gpt-oss-120b":                    None,
+    "openai/gpt-oss-120b:free":               None,
+    "openai/gpt-oss-20b":                     None,
+    "openai/gpt-oss-20b:free":                None,
+    "deepseek-ai/deepseek-v4-pro":            None,
+    "deepseek-ai/deepseek-v4-flash":          None,
+    "minimax/minimax-m2.5:free":              None,
+    "nvidia/nemotron-3-super-120b-a12b:free": None,
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": None,
+}
 
 
 @dataclass
@@ -78,6 +118,10 @@ class LiveState:
     rpd_remaining: int | None = None
     tpm_remaining: int | None = None
     tpd_remaining: int | None = None
+    tpm_limit: int | None = None
+    tpd_limit: int | None = None
+    rpm_limit: int | None = None
+    rpd_limit: int | None = None
     cooldown_until: float = 0.0
     last_429_at: float = 0.0
     last_success_at: float = 0.0
@@ -203,6 +247,10 @@ class StateStore:
                     "ALTER TABLE models ADD COLUMN supports_tools INTEGER DEFAULT 1",
                     "ALTER TABLE events ADD COLUMN process_id INTEGER",
                     "ALTER TABLE models ADD COLUMN supports_json INTEGER DEFAULT 1",
+                    "ALTER TABLE live ADD COLUMN tpm_limit INTEGER",
+                    "ALTER TABLE live ADD COLUMN tpd_limit INTEGER",
+                    "ALTER TABLE live ADD COLUMN rpm_limit INTEGER",
+                    "ALTER TABLE live ADD COLUMN rpd_limit INTEGER",
                 ]:
                     try:
                         c.execute(stmt)
@@ -240,12 +288,27 @@ class StateStore:
                 rpd_remaining=row["rpd_remaining"],
                 tpm_remaining=row["tpm_remaining"],
                 tpd_remaining=row["tpd_remaining"],
+                tpm_limit=row["tpm_limit"],
+                tpd_limit=row["tpd_limit"],
+                rpm_limit=row["rpm_limit"],
+                rpd_limit=row["rpd_limit"],
                 cooldown_until=row["cooldown_until"] or 0.0,
                 last_429_at=row["last_429_at"] or 0.0,
                 last_success_at=row["last_success_at"] or 0.0,
                 updated_at=row["updated_at"] or 0.0,
                 latency_p50_ms=row["latency_p50_ms"],
             )
+
+    def get_doc_limits(self, provider: str, model_id: str) -> dict:
+        with self._read() as c:
+            row = c.execute(
+                "SELECT doc_rpm, doc_rpd, doc_tpm, doc_tpd FROM models WHERE provider=? AND model_id=?",
+                (provider, model_id),
+            ).fetchone()
+        if row is None:
+            return {"doc_rpm": None, "doc_rpd": None, "doc_tpm": None, "doc_tpd": None}
+        return {"doc_rpm": row["doc_rpm"], "doc_rpd": row["doc_rpd"],
+                "doc_tpm": row["doc_tpm"], "doc_tpd": row["doc_tpd"]}
 
     def set_state(self, s: LiveState):
         s.updated_at = time.time()
@@ -254,14 +317,19 @@ class StateStore:
                 INSERT INTO live(
                     provider, model_id,
                     rpm_remaining, rpd_remaining, tpm_remaining, tpd_remaining,
+                    tpm_limit, tpd_limit, rpm_limit, rpd_limit,
                     cooldown_until, last_429_at, last_success_at, updated_at,
                     latency_p50_ms
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(provider, model_id) DO UPDATE SET
                     rpm_remaining=excluded.rpm_remaining,
                     rpd_remaining=excluded.rpd_remaining,
                     tpm_remaining=excluded.tpm_remaining,
                     tpd_remaining=excluded.tpd_remaining,
+                    tpm_limit=coalesce(excluded.tpm_limit, live.tpm_limit),
+                    tpd_limit=coalesce(excluded.tpd_limit, live.tpd_limit),
+                    rpm_limit=coalesce(excluded.rpm_limit, live.rpm_limit),
+                    rpd_limit=coalesce(excluded.rpd_limit, live.rpd_limit),
                     cooldown_until=excluded.cooldown_until,
                     last_429_at=excluded.last_429_at,
                     last_success_at=excluded.last_success_at,
@@ -271,6 +339,7 @@ class StateStore:
             """, (
                 s.provider, s.model_id,
                 s.rpm_remaining, s.rpd_remaining, s.tpm_remaining, s.tpd_remaining,
+                s.tpm_limit, s.tpd_limit, s.rpm_limit, s.rpd_limit,
                 s.cooldown_until, s.last_429_at, s.last_success_at, s.updated_at,
                 s.latency_p50_ms,
             ))
@@ -362,6 +431,10 @@ def parse_cerebras(h: dict) -> dict:
         "rpd_remaining": _to_int(h.get("x-ratelimit-remaining-requests-day")),
         "tpm_remaining": _to_int(h.get("x-ratelimit-remaining-tokens-minute")),
         "tpd_remaining": _to_int(h.get("x-ratelimit-remaining-tokens-day")),
+        "rpm_limit":     _to_int(h.get("x-ratelimit-limit-requests-minute")),
+        "rpd_limit":     _to_int(h.get("x-ratelimit-limit-requests-day")),
+        "tpm_limit":     _to_int(h.get("x-ratelimit-limit-tokens-minute")),
+        "tpd_limit":     _to_int(h.get("x-ratelimit-limit-tokens-day")),
     }
 
 
@@ -371,6 +444,8 @@ def parse_groq(h: dict) -> dict:
     return {
         "rpm_remaining": _to_int(h.get("x-ratelimit-remaining-requests")),
         "tpm_remaining": _to_int(h.get("x-ratelimit-remaining-tokens")),
+        "rpm_limit":     _to_int(h.get("x-ratelimit-limit-requests")),
+        "tpm_limit":     _to_int(h.get("x-ratelimit-limit-tokens")),
     }
 
 
@@ -382,6 +457,8 @@ def parse_huggingface(h: dict) -> dict:
     return {
         "rpm_remaining": _to_int(h.get("x-ratelimit-remaining-requests")),
         "tpm_remaining": _to_int(h.get("x-ratelimit-remaining-tokens")),
+        "rpm_limit":     _to_int(h.get("x-ratelimit-limit-requests")),
+        "tpm_limit":     _to_int(h.get("x-ratelimit-limit-tokens")),
     }
 
 
@@ -486,6 +563,7 @@ class Bank:
                         doc_rpd=m.get("doc_rpd"),
                         doc_tpm=m.get("doc_tpm"),
                         doc_tpd=m.get("doc_tpd"),
+                        strengths=m.get("strengths", []),
                     ))
             disabled = {d["id"]: d.get("reason", "") for d in p.get("disabled_models", [])}
             provs.append(Provider(
@@ -500,6 +578,15 @@ class Bank:
                 models=models,
                 disabled_models=disabled,
             ))
+        bm_path = yaml_path.parent / "benchmarks.yaml"
+        if bm_path.exists():
+            with bm_path.open() as f:
+                bm_data = yaml.safe_load(f) or {}
+            for p in provs:
+                for m in p.models:
+                    hf_id = CANONICAL_HF_IDS.get(m.model_id, m.model_id)
+                    if hf_id:
+                        m.benchmarks = bm_data.get(hf_id) or None
         return cls(provs, StateStore(Path(state)))
 
     def _populate_state_tables(self):
@@ -551,6 +638,7 @@ class Bank:
         min_tokens: int | None = None,
         requires_tools: bool = False,
         requires_json: bool = False,
+        require_strengths: list[str] | None = None,
     ) -> Lease | None:
         now = time.time()
         avoid = avoid or set()
@@ -585,6 +673,10 @@ class Bank:
                 candidates.append(
                     (self._score(p, m, s, prefer, prefer_models, m.tier), p, m, key)
                 )
+        if require_strengths:
+            matching = [c for c in candidates if any(s in c[2].strengths for s in require_strengths)]
+            if matching:
+                candidates = matching
         if not candidates:
             return None
         candidates.sort(reverse=True, key=lambda x: x[0])
@@ -606,6 +698,7 @@ class Bank:
         tools: list | None = None,
         tool_choice: str | dict | None = None,
         response_format: dict | None = None,
+        strengths: list[str] | None = None,
     ) -> BankResponse:
         if tier is None and not prefer_models:
             raise BankError("chat() requires either tier or prefer_models")
@@ -624,6 +717,7 @@ class Bank:
                 min_tokens=max_tokens,
                 requires_tools=(tools is not None),
                 requires_json=(response_format is not None),
+                require_strengths=strengths,
             )
             if lease is None:
                 raise BankExhausted(
@@ -807,6 +901,7 @@ class Bank:
         tools: list | None = None,
         tool_choice: str | dict | None = None,
         response_format: dict | None = None,
+        strengths: list[str] | None = None,
     ):
         """Yield text deltas as they arrive (OpenAI-compat SSE).
 
@@ -830,6 +925,7 @@ class Bank:
                 min_tokens=max_tokens,
                 requires_tools=(tools is not None),
                 requires_json=(response_format is not None),
+                require_strengths=strengths,
             )
             if lease is None:
                 raise BankExhausted(
@@ -1115,9 +1211,58 @@ def _cli():
         action="store_true",
         help="stream tokens (SSE) instead of returning full response",
     )
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="print per-provider/model health snapshot, then exit",
+    )
     args = parser.parse_args()
 
     bank = Bank.from_yaml(args.yaml, state=args.state)
+    if args.status:
+        import time as _time
+        now = _time.time()
+        COL = "{:<12} {:<45} {:^4} {:^8} {:^7} {:^8} {:<25} {}"
+        print(COL.format("PROVIDER", "MODEL", "TIER", "STATUS", "COOL(s)", "P50_MS", "STRENGTHS", "QUOTA"))
+        print("-" * 130)
+        for pname, prov in bank.providers.items():
+            pdis = bank.state.is_provider_disabled(pname)
+            for m in prov.models:
+                key = bank._state_key(prov, m)
+                s = bank.state.get_state(pname, key)
+                doc = bank.state.get_doc_limits(pname, m.model_id)
+                mdis = bank.state.is_model_disabled(pname, m.model_id)
+                if pdis:
+                    status = "PROV-DIS"
+                elif mdis:
+                    status = "DISABLED"
+                elif s.cooldown_until > now:
+                    status = "COOLDOWN"
+                else:
+                    status = "ok"
+                cool = f"{s.cooldown_until - now:.0f}" if s.cooldown_until > now else "-"
+                p50 = f"{s.latency_p50_ms:.0f}" if s.latency_p50_ms is not None else "-"
+                parts = []
+                for rem_attr, lim_attr, doc_key, label in [
+                    ("tpm_remaining", "tpm_limit", "doc_tpm", "tpm"),
+                    ("rpd_remaining", "rpd_limit", "doc_rpd", "rpd"),
+                    ("rpm_remaining", "rpm_limit", "doc_rpm", "rpm"),
+                    ("tpd_remaining", "tpd_limit", "doc_tpd", "tpd"),
+                ]:
+                    rem = getattr(s, rem_attr)
+                    live_lim = getattr(s, lim_attr)
+                    # use doc limit only as placeholder when no live data exists
+                    lim = live_lim if rem is not None else (live_lim or doc.get(doc_key))
+                    if rem is None and lim is None:
+                        continue
+                    rem_str = str(rem) if rem is not None else "-"
+                    lim_str = f"/{lim}" if lim is not None else ""
+                    parts.append(f"{rem_str}{lim_str}{label}")
+                quota = "  ".join(parts) if parts else "-"
+                strengths = ",".join(m.strengths) if m.strengths else "-"
+                print(COL.format(pname[:12], m.model_id[:45], m.tier, status, cool, p50, strengths, quota))
+        bank.close()
+        return 0
     if args.discover:
         try:
             report = bank.discover_live_models()

@@ -1,37 +1,21 @@
 # agentSwarm
 
-Pool of free-tier LLM providers selected at call time by capability tier
-+ remaining quota. Local-first, single-host, OpenAI-compatible.
-
-Status: Phase 1–3 complete (probe, bank skeleton, capability sniff).
-Roadmap items 1, 3, 4 shipped: latency-aware T3 routing, multi-process
-safe SQLite, tool calling pass-through. Phase 2 candidates 7–11 also
-shipped: pytest suite + CI, normalized tool_calls, JSON mode, MCP
-server, streaming tool calls. 7 providers wired in. See `findings.md`
-for the data behind the choices and `roadmap.md` for what's not built
-yet.
+Pool of free-tier LLM providers routed by capability tier + quota. Local-first, single-host, OpenAI-compatible. 7 providers / 40+ models.
 
 ## Quick start
 
 ```bash
-# 1. Install deps (Python 3.10+)
 pip install -r requirements.txt
-
-# 2. Copy env template, fill in API keys you want to use
 cp scripts/.env.example scripts/.env
-$EDITOR scripts/.env
+$EDITOR scripts/.env                        # fill in API keys
 
-# 3. Sanity-check the providers you have keys for
-python3 scripts/probe.py
-
-# 4. Use the bank
-python3 bank.py --tier T2 --prompt "summarize: HTTP/2 vs HTTP/3" --max-tokens 256
+python3 scripts/probe.py                    # connectivity check
+python3 bank.py --tier T2 --prompt "hello" --max-tokens 256
 ```
 
-## Provider signup (no credit card required for the working set)
+## Provider signup (no credit card required)
 
-Fill any subset; bank silently skips providers without keys. Minimum
-viable: Cerebras + Groq + OpenRouter.
+Fill any subset; bank silently skips providers without keys. Minimum viable: Cerebras + Groq + OpenRouter.
 
 | Env var                | Provider          | Get key here                                        |
 |------------------------|-------------------|-----------------------------------------------------|
@@ -45,85 +29,39 @@ viable: Cerebras + Groq + OpenRouter.
 | `DEEPSEEK_KEY`         | DeepSeek          | paid-only as of 2026-05-03 — skip                   |
 | `MOONSHOT_KEY`         | Moonshot (Kimi)   | paid-only as of 2026-05-03 — skip                   |
 
-For OpenRouter `:free` slugs to resolve, enable
-https://openrouter.ai/settings/privacy → "free models privacy" toggle.
-Without it every `:free` call returns 404.
+For OpenRouter `:free` slugs: enable https://openrouter.ai/settings/privacy → "free models privacy" toggle.
 
-## What it does
+## CLI
 
-`bank.py` exposes a `Bank` class:
+```bash
+# Connectivity probe
+python3 scripts/probe.py
+python3 scripts/probe.py groq cerebras --retries 1
 
-```python
-from bank import Bank
-bank = Bank.from_yaml("scripts/providers.yaml", state="bank-state.sqlite")
+# Capability sniff
+python3 scripts/capsniff.py --tier T1     # T1 / T2 / T3
+python3 scripts/capsniff.py groq
 
-# Non-streaming
-resp = bank.chat(
-    messages=[{"role": "user", "content": "hello"}],
-    tier="T2",                         # T1 reasoning / T2 general / T3 fast
-    max_tokens=256,
-    prefer=["groq"],                   # provider preference
-    prefer_models=["llama-3.3-70b"],   # specific model preference
-    avoid=["nvidia_nim"],
-    avoid_models=["..."],
-    tools=[...],                       # optional: OpenAI-compat tool definitions
-    tool_choice="auto",                # optional: "auto" | "none" | {type, function}
-    response_format={"type": "json_object"},  # optional: forwarded to provider; failover on 400
-)
-print(resp.text, resp.provider, resp.model, resp.latency_ms)
-print(resp.tool_calls)   # canonical list [{id, type, function: {name, arguments}}], or None
-print(resp.meta)         # prompt_tokens, completion_tokens, rpm_remaining, etc.
+# One-shot inference
+python3 bank.py --tier T2 --prompt "..." --max-tokens 256
+python3 bank.py --tier T1 --prefer huggingface --max-tokens 1024
+python3 bank.py --tier T3 --stream --prompt "count to 5" --max-tokens 32
+python3 bank.py --tier any --prefer-models deepseek-ai/DeepSeek-R1 --prompt "..."
 
-# Streaming (OpenAI-compat SSE) — also supports tools= and response_format=
-for chunk in bank.stream(messages=[...], tier="T2", max_tokens=512, tools=[...]):
-    if isinstance(chunk, str):
-        print(chunk, end="", flush=True)
-    else:
-        # final dict: {provider, model, latency_ms, ttfb_ms, meta, tool_calls}
-        # tool_calls is the assembled list (None when no tools used)
-        pass
+# Catalog sync (hits /v1/models, auto-disables stale IDs)
+python3 bank.py --discover
 
-# Refresh provider catalogs from /v1/models, auto-disable stale IDs
-report = bank.discover_live_models()
+# Health snapshot: status, quota, latency p50, strengths
+python3 bank.py --status
 ```
 
-Selection policy lives in `TIER_PRIORITY` and `_score()` in `bank.py`.
-T3 uses measured latency p50 (EWMA) instead of YAML order — fastest
-model wins. State persists in `bank-state.sqlite` (WAL, multi-process
-safe via `BEGIN IMMEDIATE`). Failover on 429/5xx/timeout, permanent
-disable on 404/410. Models that reject tool calls are marked
-`supports_tools=false` and skipped on future tool requests.
+**Tiers**: T1 = reasoning/quality-first · T2 = general/quota-first · T3 = fast/latency-p50 (Groq/Cerebras win).
 
 ## MCP server (Claude Code integration)
 
-`mcp_server.py` wraps the bank as an MCP stdio server so Claude Code
-can delegate cheap subtasks (file summaries, docstring drafts,
-mechanical text transforms) to free-tier models instead of burning
-Claude API quota. Three tools: `llm_call`, `bank_status`,
-`discover_models`. See `CLAUDE.md` for when to delegate vs. handle a
-task directly.
+`mcp_server.py` wraps the bank so Claude Code can delegate cheap subtasks (summaries, transforms, docstring drafts) to free-tier models. Three tools: `llm_call`, `bank_status`, `discover_models`.
 
-### Global setup (loads in every Claude Code project)
-
-Add to the top-level `mcpServers` object in `~/.claude.json`:
-
-```json
-"mcpServers": {
-  "agentswarm-bank": {
-    "type": "stdio",
-    "command": "python",
-    "args": ["/absolute/path/to/agentswarm/mcp_server.py"]
-  }
-}
-```
-
-Replace the path with the absolute path to this repo on your machine.
-API keys are read from `scripts/.env` relative to the repo — no extra
-config needed.
-
-### Project-local setup (this repo only)
-
-Create `.mcp.json` in the repo root:
+Add to `.mcp.json` in the repo root:
 
 ```json
 {
@@ -137,80 +75,35 @@ Create `.mcp.json` in the repo root:
 }
 ```
 
-```bash
-# Standalone smoke test (sits on stdin; Ctrl-C to exit)
-python mcp_server.py
+For global setup (all Claude Code projects), add the same block to `~/.claude.json` with an absolute path to `mcp_server.py`.
 
-# Or poke the tools via the official inspector
-npx @modelcontextprotocol/inspector python mcp_server.py
-```
-
-## Tier rosters (post Phase-3 capsniff)
-
-- **T1 reasoning** (15 verified): groq/gpt-oss-120b, sambanova {V3.2, V3.1, gpt-oss-120b}, nim {kimi-k2-instruct, gpt-oss-120b, nemotron-super-49b, glm5}, openrouter {gpt-oss-120b, nemotron-3-super, nemotron-nano-omni-reasoning, glm-4.5-air}, hf {DeepSeek-R1, DeepSeek-V3.2, Qwen3-235B}.
-- **T2 general** (10): groq {llama-3.3-70b, qwen3-32b, llama-4-scout, gpt-oss-20b}, google/gemini-2.5-flash, sambanova/Llama-4-Maverick, nim/qwen3-next-80b, openrouter {gpt-oss-20b, minimax-m2.5}, hf {Llama-3.3-70B, Qwen3-Next-80B}.
-- **T3 fast** (3): groq/llama-3.1-8b-instant, cerebras/llama3.1-8b, hf/gemma-3-27b-it.
-
-Re-verify any time:
-```bash
-python3 scripts/capsniff.py --tier T1
-```
+`llm_call` accepts `file_path` to read a local file server-side — avoids inlining large files into the prompt. See `CLAUDE.md` for delegation guidelines.
 
 ## Layout
 
 ```
 agentSwarm/
-  bank.py                    # main module: Bank, BankResponse, state, headers
+  bank.py                    # Bank class, routing, failover, SQLite state
+  mcp_server.py              # MCP stdio server (llm_call, bank_status, discover_models)
   bank-design.md             # architecture + decisions
-  findings.md                # phase-1 probe + phase-3 capsniff verdicts
-  roadmap.md                 # 6 optional follow-on phases
-  research-plan.md           # original 5-phase plan
-  README.md                  # this file
-  requirements.txt           # pip deps
-  Free Tier LLM Aggregation Strategy.txt  # source notes (read-only)
-  providers/<name>.md        # one note per provider, post-probe status
+  findings.md                # probe + capsniff verdicts
+  roadmap.md                 # follow-on phases
+  requirements.txt
   scripts/
-    .env.example             # env-var slots
-    .env                     # your keys (gitignored)
-    providers.yaml           # provider registry: base_url, key_env, models, tiers
-    probe.py                 # phase-1 connectivity + header capture
-    probe-spec.md            # what probe.py does
-    capsniff.py              # phase-3 capability sniff (one reasoning + one code prompt per model)
+    .env.example / .env      # API keys
+    providers.yaml           # provider registry
+    probe.py                 # connectivity + header capture → findings/*.json
+    capsniff.py              # capability sniff (reasoning + code prompts)
   findings/                  # probe + capsniff JSON output (gitignored)
   bank-state.sqlite          # live state (gitignored)
 ```
 
-## CLI cheat sheet
-
-```bash
-# Connectivity probe (all providers with keys)
-python3 scripts/probe.py
-python3 scripts/probe.py groq cerebras --retries 1
-
-# Capability sniff
-python3 scripts/capsniff.py --tier T1     # T1 / T2 / T3
-python3 scripts/capsniff.py groq           # single provider
-
-# Bank one-shot
-python3 bank.py --tier T2 --prompt "..." --max-tokens 256
-python3 bank.py --tier T1 --prefer huggingface --max-tokens 1024
-python3 bank.py --tier T3 --stream --prompt "count to 5" --max-tokens 32
-
-# Refresh provider catalogs (auto-disable stale model IDs)
-python3 bank.py --discover
-
-# Pin a single model
-python3 bank.py --tier any --prefer-models deepseek-ai/DeepSeek-R1 --prompt "..."
-```
-
 ## Troubleshooting
 
-- **All providers skipped on probe** — `.env` not in `scripts/`. `cp scripts/.env.example scripts/.env`.
-- **`BankExhausted: no eligible (provider, model) for tier=...`** — every model in that tier is in cooldown or disabled. Check: `sqlite3 bank-state.sqlite "SELECT * FROM disabled_models"` and `SELECT provider, model_id, cooldown_until FROM live`.
-- **OpenRouter `:free` returns 404** — privacy toggle off. Enable at https://openrouter.ai/settings/privacy.
-- **NVIDIA NIM ReadTimeout** — first call cold-starts a container. `request_timeout: 120` already set in yaml; second call usually warm. Bank automatically failovers after timeout.
-- **SambaNova exhausted fast** — 20 RPD per model on free tier; the bank deprioritizes it correctly. Check `SELECT * FROM live WHERE provider='sambanova'`.
-- **Stale catalog** — run `python3 bank.py --discover` then check `disabled_models` table for fresh entries.
+- **All providers skipped** — `.env` not in `scripts/`. Run `cp scripts/.env.example scripts/.env`.
+- **`BankExhausted`** — every model in the tier is in cooldown or disabled. Run `bank.py --status` to see state.
+- **OpenRouter `:free` returns 404** — enable free-models privacy toggle at https://openrouter.ai/settings/privacy.
+- **Stale catalog** — run `bank.py --discover` then check the `disabled_models` table.
 
 ## License
 

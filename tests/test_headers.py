@@ -21,6 +21,10 @@ def test_parse_cerebras():
         "x-ratelimit-remaining-requests-day": "999",
         "x-ratelimit-remaining-tokens-minute": "55000",
         "x-ratelimit-remaining-tokens-day": "899000",
+        "x-ratelimit-limit-requests-minute": "30",
+        "x-ratelimit-limit-requests-day": "14400",
+        "x-ratelimit-limit-tokens-minute": "60000",
+        "x-ratelimit-limit-tokens-day": "1000000",
     }
     out = bank.parse_cerebras(h)
     assert out == {
@@ -28,6 +32,10 @@ def test_parse_cerebras():
         "rpd_remaining": 999,
         "tpm_remaining": 55000,
         "tpd_remaining": 899000,
+        "rpm_limit": 30,
+        "rpd_limit": 14400,
+        "tpm_limit": 60000,
+        "tpd_limit": 1000000,
     }
 
 
@@ -51,10 +59,15 @@ def test_parse_openrouter():
 
 def test_parse_handles_missing_keys():
     # All parsers must tolerate empty dicts — return None for absent fields.
-    assert bank.parse_groq({}) == {"rpm_remaining": None, "tpm_remaining": None}
+    assert bank.parse_groq({}) == {
+        "rpm_remaining": None, "tpm_remaining": None,
+        "rpm_limit": None, "tpm_limit": None,
+    }
     assert bank.parse_cerebras({}) == {
         "rpm_remaining": None, "rpd_remaining": None,
         "tpm_remaining": None, "tpd_remaining": None,
+        "rpm_limit": None, "rpd_limit": None,
+        "tpm_limit": None, "tpd_limit": None,
     }
 
 

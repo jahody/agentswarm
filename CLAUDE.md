@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-**agentSwarm** — free-tier LLM aggregation library (`bank.py`). Routes across 7 providers / 40+ models by tier (T1/T2/T3), quota, and failover state. Unified OAI-compatible interface; automatic failover, quota tracking, SQLite persistence.
+**agentSwarm** — free-tier LLM aggregation library (`bank.py`). Routes across 7 providers / 30+ models by tier (T1/T2/T3), quota, and failover state. Unified OAI-compatible interface; automatic failover, quota tracking, SQLite persistence.
 
 ## Commands
 

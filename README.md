@@ -1,6 +1,8 @@
 # agentSwarm
 
-Pool of free-tier LLM providers routed by capability tier + quota. Local-first, single-host, OpenAI-compatible. 7 providers / 40+ models.
+Pool of free-tier LLM providers routed by capability tier + quota. Local-first, single-host, OpenAI-compatible. 7 providers / 30+ models (catalog checked 2026-10-20).
+
+**Try it in the browser:** [jahody.github.io/apps/agentswarm](https://jahody.github.io/apps/agentswarm/) is a static port of the router: chat with tier routing and failover, or compare models side by side. Bring your own keys; they go only to the provider. It covers 5 of the 7 providers, because SambaNova and NVIDIA NIM block browser requests.
 
 ## Quick start
 
@@ -9,17 +11,18 @@ pip install -r requirements.txt
 cp scripts/.env.example scripts/.env
 $EDITOR scripts/.env                        # fill in API keys
 
+python bank.py --discover                  # disable model ids the providers have retired
 python scripts/probe.py                    # connectivity check
 python bank.py --tier T2 --prompt "hello" --max-tokens 256
 ```
 
 ## Provider signup (no credit card required)
 
-Fill any subset; bank silently skips providers without keys. Minimum viable: Cerebras + Groq + OpenRouter.
+Fill any subset; bank silently skips providers without keys. Minimum viable: Groq + OpenRouter + Google AI Studio.
 
 | Env var                | Provider          | Get key here                                        |
 |------------------------|-------------------|-----------------------------------------------------|
-| `CEREBRAS_KEY`         | Cerebras          | https://cloud.cerebras.ai/                          |
+| `CEREBRAS_KEY`         | Cerebras          | https://cloud.cerebras.ai/ (answered 402 "billing required" in 2026-10) |
 | `GROQ_KEY`             | Groq              | https://console.groq.com/keys                       |
 | `OPENROUTER_KEY`       | OpenRouter        | https://openrouter.ai/settings/keys                 |
 | `GOOGLE_AI_STUDIO_KEY` | Google AI Studio  | https://aistudio.google.com/apikey                  |
@@ -30,6 +33,8 @@ Fill any subset; bank silently skips providers without keys. Minimum viable: Cer
 | `MOONSHOT_KEY`         | Moonshot (Kimi)   | paid-only as of 2026-05-03 — skip                   |
 
 For OpenRouter `:free` slugs: enable https://openrouter.ai/settings/privacy → "free models privacy" toggle.
+
+Free-tier catalogs change fast: most model ids from May 2026 were gone by October. `scripts/providers.yaml` is a curated snapshot, so run `python bank.py --discover` after cloning and every few weeks. It disables ids a provider no longer lists and reports new ones to add by hand.
 
 ## CLI
 
@@ -85,7 +90,6 @@ For per-project setup only, add the same block to `.mcp.json` in the repo root w
 agentSwarm/
   bank.py                    # Bank class, routing, failover, SQLite state
   mcp_server.py              # MCP stdio server (llm_call, bank_status, discover_models)
-  bank-design.md             # architecture + decisions
   findings.md                # probe + capsniff verdicts
   roadmap.md                 # follow-on phases
   requirements.txt
@@ -94,6 +98,10 @@ agentSwarm/
     providers.yaml           # provider registry
     probe.py                 # connectivity + header capture → findings/*.json
     capsniff.py              # capability sniff (reasoning + code prompts)
+    fetch_benchmarks.py      # HF Hub benchmark scores → scripts/benchmarks.yaml
+    fetch_strengths.py       # suggest `strengths` labels per model
+  providers/                 # per-provider notes (limits, headers, quirks)
+  tests/                     # pytest suite (failover, streaming, MCP, parsers)
   findings/                  # probe + capsniff JSON output (gitignored)
   bank-state.sqlite          # live state (gitignored)
 ```

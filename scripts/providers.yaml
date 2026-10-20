@@ -1,9 +1,12 @@
-# Cleaned 2026-05-03 after Phase-1 probe. See findings.md for verdicts.
+# Catalog refreshed 2026-10-20 against each provider's live /models plus a one-request
+# probe per model; most ids from the 2026-05-03 cleanup had been retired by then.
+# Tiers for ids added on 2026-10-20 are provisional (no capsniff run yet).
 # Removed: deepseek (402, no signup credit), moonshot (suspended at $0).
 # Each model entry: {id, tier} where tier in {T1, T2, T3}.
 # T1 = high reasoning, T2 = general, T3 = fast/cheap.
-# `disabled_models`: permanently dropped IDs (404/410/gated). Kept for audit.
+# `disabled_models`: permanently dropped IDs (404/410/gated/retired). Kept for audit.
 # `strengths`: capability labels — reasoning, coding, agentic, fast, multilingual, general.
+# Catalogs drift fast: run `python bank.py --discover` before relying on this list.
 
 - name: cerebras
   base_url: https://api.cerebras.ai/v1
@@ -12,13 +15,16 @@
   quota_strategy: headers
   request_timeout: 30
   data_used_for_training: false
-  notes: rich x-ratelimit-{limit,remaining}-{requests,tokens}-{minute,hour,day}
+  notes: |
+    rich x-ratelimit-{limit,remaining}-{requests,tokens}-{minute,hour,day}.
+    2026-10-20: every model answered 402 "payment required" (billing tab) for our
+    account, so the free tier may now need billing set up. Bank cools 402 down 24 h.
   models:
-    - {id: llama3.1-8b,                        tier: T3, doc_rpm: 30, doc_rpd: 14400, doc_tpm: 60000, doc_tpd: 1000000, strengths: [fast]}
-    # Demoted T1 -> T2 after 2026-05-03 capsniff (failed reasoning verdict).
-    - {id: qwen-3-235b-a22b-instruct-2507,     tier: T2, doc_rpm: 30, doc_rpd: 14400, doc_tpm: 60000, doc_tpd: 1000000, strengths: [general, multilingual]}
+    - {id: gpt-oss-120b,  tier: T1, strengths: [general, reasoning]}
+    - {id: qwen-3.8-27b,  tier: T3, strengths: [fast, general]}
   disabled_models:
-    - {id: gpt-oss-120b,    reason: "404 access gated despite catalog presence"}
+    - {id: llama3.1-8b,                     reason: "retired; missing from /models 2026-10"}
+    - {id: qwen-3-235b-a22b-instruct-2507,  reason: "retired; missing from /models 2026-10"}
     - {id: zai-glm-4.7,     reason: "404 access gated"}
     - {id: llama-3.3-70b,   reason: "stale id (renamed)"}
     - {id: qwen-3-32b,      reason: "stale id"}
@@ -33,13 +39,14 @@
   data_used_for_training: false
   notes: per-model RPM/TPM in headers; window inferred from reset interval
   models:
-    - {id: llama-3.3-70b-versatile,                       tier: T2, doc_rpm: 30, doc_rpd: 14400, doc_tpm: 131072, strengths: [general, multilingual]}
-    - {id: llama-3.1-8b-instant,                          tier: T3, doc_rpm: 30, doc_rpd: 14400, doc_tpm: 131072, strengths: [fast]}
-    - {id: qwen/qwen3-32b,                                tier: T2, doc_rpm: 30, doc_rpd: 14400, doc_tpm: 40000,  strengths: [general, multilingual]}
-    - {id: meta-llama/llama-4-scout-17b-16e-instruct,     tier: T2, doc_rpm: 30, doc_rpd: 14400, doc_tpm: 131072, strengths: [fast, multilingual]}
-    - {id: openai/gpt-oss-120b,                           tier: T1, strengths: [general, reasoning]}
-    - {id: openai/gpt-oss-20b,                            tier: T2, strengths: [general]}
+    - {id: openai/gpt-oss-120b,  tier: T1, strengths: [general, reasoning]}
+    - {id: openai/gpt-oss-20b,   tier: T2, strengths: [general]}
+    - {id: qwen/qwen3.8-27b,     tier: T3, strengths: [fast, multilingual]}
   disabled_models:
+    - {id: llama-3.3-70b-versatile,                   reason: "retired; missing from /models 2026-10"}
+    - {id: llama-3.1-8b-instant,                      reason: "retired; missing from /models 2026-10"}
+    - {id: qwen/qwen3-32b,                            reason: "retired; missing from /models 2026-10"}
+    - {id: meta-llama/llama-4-scout-17b-16e-instruct, reason: "retired; missing from /models 2026-10"}
     - {id: qwen-qwq-32b,                  reason: "decommissioned"}
     - {id: deepseek-r1-distill-llama-70b, reason: "decommissioned"}
     - {id: moonshotai/kimi-k2-instruct,   reason: "not hosted by Groq"}
@@ -55,6 +62,8 @@
   models:
     - {id: gemini-2.5-flash,      tier: T2, doc_rpm: 10,  doc_rpd: 250,   doc_tpm: 1000000, strengths: [general, multilingual]}
     - {id: gemini-2.5-flash-lite, tier: T3, doc_rpm: 30,  doc_rpd: 14000, doc_tpm: 1000000, strengths: [fast, multilingual]}
+    - {id: gemini-3.5-flash,      tier: T1, strengths: [reasoning, general]}
+    - {id: gemini-3.5-flash-lite, tier: T3, strengths: [fast, multilingual]}
   disabled_models:
     - {id: gemini-2.5-pro, reason: "limit:0 on free tier (paid only)"}
 
@@ -65,15 +74,19 @@
   quota_strategy: headers
   request_timeout: 30
   data_used_for_training: false
-  notes: 20 RPD per model only; no RPM/TPM headers; soft-throttle locally
+  notes: |
+    20 RPD per model only; no RPM/TPM headers; soft-throttle locally.
+    2026-10-20: ids below are from the live /models; not probed (our key had expired).
   models:
-    - {id: Meta-Llama-3.3-70B-Instruct,        tier: T2, doc_rpd: 20, strengths: [general, multilingual]}
-    - {id: DeepSeek-V3.2,                      tier: T1, doc_rpd: 20, strengths: [coding, general]}
-    - {id: DeepSeek-V3.1,                      tier: T1, doc_rpd: 20, strengths: [coding, general]}
-    - {id: Llama-4-Maverick-17B-128E-Instruct, tier: T2, doc_rpd: 20, strengths: [general, multilingual]}
-    - {id: gpt-oss-120b,                       tier: T1, doc_rpd: 20, strengths: [general, reasoning]}
-    - {id: gemma-3-12b-it,                     tier: T3, doc_rpd: 20, strengths: [fast, multilingual]}
+    - {id: Meta-Llama-3.3-70B-Instruct, tier: T2, doc_rpd: 20, strengths: [general, multilingual]}
+    - {id: DeepSeek-V3.2,               tier: T1, doc_rpd: 20, strengths: [coding, general]}
+    - {id: DeepSeek-V3.1,               tier: T1, doc_rpd: 20, strengths: [coding, general]}
+    - {id: gpt-oss-120b,                tier: T1, doc_rpd: 20, strengths: [general, reasoning]}
+    - {id: MiniMax-M3,                  tier: T2, doc_rpd: 20, strengths: [general]}
+    - {id: gemma-4-31B-it,              tier: T3, doc_rpd: 20, strengths: [fast, multilingual]}
   disabled_models:
+    - {id: Llama-4-Maverick-17B-128E-Instruct, reason: "retired; missing from /models 2026-10"}
+    - {id: gemma-3-12b-it,                     reason: "retired; missing from /models 2026-10"}
     - {id: DeepSeek-R1, reason: "410 deprecated; use V3.2"}
 
 - name: nvidia_nim
@@ -83,18 +96,28 @@
   quota_strategy: opaque
   request_timeout: 120
   data_used_for_training: false
-  notes: cold-start can exceed 60s; opaque quota; monthly credit budget visible only in dashboard
+  notes: |
+    cold-start can exceed 60s (glm-5.3-flash and gemma-4-31b-it took ~40s on first call);
+    opaque quota; monthly credit budget visible only in dashboard
   models:
-    - {id: moonshotai/kimi-k2-instruct,                       tier: T1, strengths: [agentic, coding]}
-    - {id: moonshotai/kimi-k2-thinking,                       tier: T1, strengths: [reasoning]}
-    - {id: meta/llama-3.3-70b-instruct,                       tier: T2, strengths: [general, multilingual]}
-    - {id: deepseek-ai/deepseek-v4-pro,                       tier: T1, strengths: [coding, general]}
-    - {id: deepseek-ai/deepseek-v4-flash,                     tier: T2, strengths: [coding, fast]}
-    - {id: openai/gpt-oss-120b,                               tier: T1, strengths: [general, reasoning]}
-    - {id: qwen/qwen3-next-80b-a3b-instruct,                  tier: T2, strengths: [general, multilingual]}
-    - {id: nvidia/llama-3.3-nemotron-super-49b-v1.5,          tier: T1, strengths: [reasoning, general]}
-    - {id: z-ai/glm5,                                         tier: T1, strengths: [multilingual]}
+    - {id: nvidia/nemotron-3-ultra-550b-a55b,             tier: T1, strengths: [reasoning, general]}
+    - {id: nvidia/nemotron-3-super-120b-a12b,             tier: T1, strengths: [reasoning, agentic]}
+    - {id: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning, tier: T1, strengths: [reasoning, fast]}
+    - {id: openai/gpt-oss-20b,                            tier: T2, strengths: [general]}
+    - {id: z-ai/glm-5.3-flash,                            tier: T2, strengths: [multilingual, coding]}
+    - {id: google/gemma-4-31b-it,                         tier: T2, strengths: [general, multilingual]}
   disabled_models:
+    - {id: moonshotai/kimi-k2-instruct,              reason: "retired; missing from /models 2026-10"}
+    - {id: moonshotai/kimi-k2-thinking,              reason: "retired; missing from /models 2026-10"}
+    - {id: meta/llama-3.3-70b-instruct,              reason: "retired; missing from /models 2026-10"}
+    - {id: deepseek-ai/deepseek-v4-pro,              reason: "retired; missing from /models 2026-10"}
+    - {id: deepseek-ai/deepseek-v4-flash,            reason: "retired; missing from /models 2026-10"}
+    - {id: openai/gpt-oss-120b,                      reason: "retired; missing from /models 2026-10"}
+    - {id: qwen/qwen3-next-80b-a3b-instruct,         reason: "retired; missing from /models 2026-10"}
+    - {id: nvidia/llama-3.3-nemotron-super-49b-v1.5, reason: "retired; missing from /models 2026-10"}
+    - {id: z-ai/glm5,                                reason: "retired; missing from /models 2026-10"}
+    - {id: moonshotai/kimi-k2.6,                     reason: "404 function not found for account (2026-10)"}
+    - {id: mistralai/mistral-large-2-instruct,       reason: "404 function not found for account (2026-10)"}
     - {id: deepseek-ai/deepseek-r1,  reason: "410 EOL 2026-01-26"}
     - {id: deepseek-ai/deepseek-v3.2, reason: "superseded by v4; missing from NIM catalog 2026-05"}
 
@@ -111,22 +134,25 @@
     https://openrouter.ai/settings/privacy. Several free routes also
     rate-limit upstream returning 429.
   models:
-    # PASS+PASS in 2026-05-03 capsniff
     # doc limits are account-wide shared bucket (20 RPM / 50 RPD total across all :free models)
-    - {id: openai/gpt-oss-120b:free,                              tier: T1, doc_rpm: 20, doc_rpd: 50, strengths: [general, reasoning]}
-    - {id: nvidia/nemotron-3-super-120b-a12b:free,                tier: T1, doc_rpm: 20, doc_rpd: 50, strengths: [reasoning]}
-    - {id: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free,    tier: T1, doc_rpm: 20, doc_rpd: 50, strengths: [reasoning, fast]}
-    - {id: z-ai/glm-4.5-air:free,                                 tier: T1, doc_rpm: 20, doc_rpd: 50, strengths: [multilingual]}
-    - {id: openai/gpt-oss-20b:free,                               tier: T2, doc_rpm: 20, doc_rpd: 50, strengths: [general]}
-    - {id: minimax/minimax-m2.5:free,                             tier: T2, doc_rpm: 20, doc_rpd: 50, strengths: [general]}
+    - {id: nvidia/nemotron-3-ultra-550b-a55b:free,             tier: T1, doc_rpm: 20, doc_rpd: 50, strengths: [reasoning, general]}
+    - {id: nvidia/nemotron-3-super-120b-a12b:free,             tier: T1, doc_rpm: 20, doc_rpd: 50, strengths: [reasoning]}
+    - {id: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free, tier: T1, doc_rpm: 20, doc_rpd: 50, strengths: [reasoning, fast]}
+    - {id: minimax/minimax-m3.1-flash:free,                    tier: T2, doc_rpm: 20, doc_rpd: 50, strengths: [general]}
+    - {id: google/gemma-4-31b-it:free,                         tier: T2, doc_rpm: 20, doc_rpd: 50, strengths: [general, multilingual]}
   disabled_models:
+    # Retired from the :free catalog by 2026-10
+    - {id: openai/gpt-oss-120b:free,                   reason: "no longer free (404 'unavailable for free') 2026-10"}
+    - {id: openai/gpt-oss-20b:free,                    reason: "no longer free (404 'unavailable for free') 2026-10"}
+    - {id: z-ai/glm-4.5-air:free,                      reason: "retired from :free catalog 2026-10"}
+    - {id: minimax/minimax-m2.5:free,                  reason: "retired from :free catalog 2026-10"}
     # Stale (not in live /v1/models)
     - {id: deepseek/deepseek-r1:free,                  reason: "stale, not in live :free catalog"}
     - {id: deepseek/deepseek-r1-0528:free,             reason: "stale"}
     - {id: google/gemini-2.5-pro-exp:free,             reason: "stale"}
     - {id: qwen/qwen-2.5-72b-instruct:free,            reason: "stale"}
     - {id: mistralai/mistral-small-3.1-24b-instruct:free, reason: "stale"}
-    # Persistent upstream rate-limit (capsniff 2026-05-03; retry weekly)
+    # Persistent upstream rate-limit (capsniff 2026-05-03)
     - {id: nousresearch/hermes-3-llama-3.1-405b:free,  reason: "persistent upstream 429"}
     - {id: qwen/qwen3-next-80b-a3b-instruct:free,      reason: "persistent upstream 429"}
     - {id: qwen/qwen3-coder:free,                      reason: "persistent upstream 429"}
@@ -144,15 +170,17 @@
   notes: |
     Routes to backend providers (Cerebras/Together/Fireworks/Hyperbolic).
     Headers reflect router state. Risk of double-counting if a backend
-    is also registered directly.
+    is also registered directly. Free use is a small monthly credit; after
+    that it answers 402 (bank cools down 24 h).
   models:
     - {id: meta-llama/Llama-3.3-70B-Instruct,          tier: T2, doc_rpm: 500000, doc_tpm: 300000, strengths: [general, multilingual]}
     - {id: deepseek-ai/DeepSeek-R1,                    tier: T1, doc_rpm: 500000, doc_tpm: 300000, strengths: [reasoning, coding]}
     - {id: deepseek-ai/DeepSeek-V3.2,                  tier: T1, doc_rpm: 500000, doc_tpm: 300000, strengths: [coding, general]}
     - {id: Qwen/Qwen3-235B-A22B-Instruct-2507,         tier: T1, doc_rpm: 500000, doc_tpm: 300000, strengths: [general, multilingual]}
     - {id: Qwen/Qwen3-Next-80B-A3B-Instruct,           tier: T2, doc_rpm: 500000, doc_tpm: 300000, strengths: [general, multilingual]}
-    - {id: Qwen/Qwen3-Coder-480B-A35B-Instruct,        tier: T2, doc_rpm: 500000, doc_tpm: 300000, strengths: [coding]}
     - {id: google/gemma-3-27b-it,                      tier: T3, doc_rpm: 500000, doc_tpm: 300000, strengths: [fast, multilingual]}
+  disabled_models:
+    - {id: Qwen/Qwen3-Coder-480B-A35B-Instruct,        reason: "retired; missing from /models 2026-10"}
 
 # Removed providers (paid-only as of 2026-05-03):
 # - deepseek: 402 Insufficient Balance; signup credits no longer granted.

@@ -1,6 +1,6 @@
 """Agent Bank — pool of free-tier LLM providers picked by tier + remaining quota.
 
-Public surface (matches bank-design.md):
+Public surface:
 
     from agentSwarm.bank import Bank
     bank = Bank.from_yaml("scripts/providers.yaml", state="bank-state.sqlite")
@@ -33,10 +33,11 @@ import httpx
 import yaml
 from dotenv import load_dotenv
 
-# Tier priority encodes the post-Phase-1 selection order from findings.md +
-# bank-design.md. Earlier in the list = higher preference.
+# Tier priority encodes the post-Phase-1 selection order from findings.md;
+# groq and google_ai_studio were appended to T1 when they gained T1 models
+# (2026-10). Earlier in the list = higher preference.
 TIER_PRIORITY: dict[str, list[str]] = {
-    "T1": ["huggingface", "nvidia_nim", "sambanova", "cerebras", "openrouter"],
+    "T1": ["huggingface", "nvidia_nim", "sambanova", "cerebras", "openrouter", "groq", "google_ai_studio"],
     "T2": ["groq", "huggingface", "sambanova", "google_ai_studio", "nvidia_nim", "openrouter"],
     "T3": ["groq", "cerebras", "google_ai_studio", "sambanova", "huggingface", "openrouter"],
 }

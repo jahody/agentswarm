@@ -32,3 +32,7 @@ Env: `scripts/.env.example` -> `scripts/.env` (gitignored; `python-dotenv`).
 MCP server `agentswarm-bank`: `llm_call(prompt, system?, tier?, max_tokens?, prefer?, avoid?, file_path?, max_bytes?)`, `bank_status()`, `discover_models(only?)`.
 
 **Use for**: summaries, docstring drafts, transforms, regex, field extraction. Default `tier="T2"`, `"T3"` for speed, `"T1"` for reasoning only. **Pass `file_path`** when the task is over a local file — the server reads it (CWD-restricted) so you don't pay tokens to inline the contents. **Do NOT**: multi-step work, unreviewed code commits, tasks needing follow-up turns.
+
+## Browser port
+
+A static JS port of the router runs on the site: `jahody.github.io/public/apps/agentswarm/` (`providers.js` mirrors `scripts/providers.yaml`; `bank.js` ports `_score`/`acquire`/`stream` and the failover table). It covers only the providers that send CORS headers (not SambaNova or NVIDIA NIM). When `providers.yaml`, `TIER_PRIORITY` or the error handling changes, update the port too.
